@@ -1,0 +1,32 @@
+{
+  "name": "ChoralEval 合唱ピッチ・リズムコーチ",
+  "short_name": "ChoralEval",
+  "description": "歌声を録音して、音程・リズム・声の安定を端末内で解析する合唱練習アプリ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0c1630",
+  "theme_color": "#0c1630",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
