@@ -311,6 +311,36 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
 .data-sec p { font-size: 13.5px; line-height: 1.65; color: var(--muted); }
 .data-sec .row { display: flex; gap: 8px; }
 
+/* ---------- 曲の登録：楽譜画像・音源・ボタン入力 ---------- */
+.song-main { display: grid; gap: 14px; min-width: 0; align-content: start; }
+.img-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.img-pick label.mini-btn { cursor: pointer; }
+.img-pick .help { font-size: 12px; color: var(--muted); flex: 1 1 220px; }
+.img-pane { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); display: flex; flex-direction: column; overflow: hidden; }
+.img-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.img-bar .sp { flex: 1; }
+.img-view { overflow: auto; max-height: 38vh; background: #fff; }
+.img-view img { display: block; width: 100%; max-width: none; height: auto; }
+.img-view iframe { display: block; width: 100%; height: 60vh; border: 0; }
+#dlgSong.wide { width: min(1260px, calc(100vw - 24px)); }
+@media (min-width: 900px) {
+  #dlgSong.wide .dlg-b { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; }
+  #dlgSong.wide .img-pane { position: sticky; top: 0; }
+  #dlgSong.wide .img-view { max-height: calc(100vh - 230px); }
+}
+.pv.from { background: var(--brand-soft); }
+.pv.from .warn { color: var(--bad); font-weight: 700; }
+.pal { display: grid; gap: 8px; margin-top: 8px; padding: 10px; border: 1px dashed var(--line); border-radius: 12px; background: var(--panel-2); }
+.pal-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pal-row .pl { width: 2.6em; font-size: 12px; font-weight: 700; color: var(--muted); }
+.pal-b { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pal-b button { border: 1px solid var(--line); background: var(--panel); border-radius: 9px; min-width: 40px; min-height: 40px; padding: 4px 10px; font-weight: 700; font-size: 14px; color: var(--ink); }
+.pal-b button:hover { background: var(--brand-soft); }
+.pal-b button.on, .pal-b button[aria-pressed="true"] { background: var(--brand-soft); color: var(--brand); border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
+.pal-b button.rest { color: var(--muted); }
+.pal-b .u { font-size: 12px; color: var(--muted); }
+.pal-b .oct { min-width: 2em; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
+
 </style>
 </head>
 <body>
@@ -426,7 +456,7 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
         <canvas id="roll" aria-label="目標の音符と歌ったピッチを重ねて表示するグラフ" role="img"></canvas>
         <div class="roll-empty" id="rollEmpty" hidden>
           <div class="big">♪</div>
-          <p>まず練習する曲を追加しましょう。<br>音符を入力するか、MusicXML（.musicxml / .mxl）を読み込みます。</p>
+          <p>まず練習する曲を追加しましょう。<br>パート練習用のmp3などの音源を選ぶだけで、旋律を自動で読み取れます。</p>
           <div class="row"><button class="btn primary" id="btnEmptyAdd" type="button">曲を追加</button><button class="btn" id="btnEmptyLoad" type="button">保存したデータ（JSON）を読み込む</button></div>
         </div>
         <div class="roll-over" id="rollOver" hidden><div class="big" id="overBig"></div><div class="msg" id="overMsg" hidden></div><div class="bar" id="overBar" hidden><i></i></div></div>
@@ -482,36 +512,83 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
 <dialog id="dlgSong" aria-labelledby="dsT">
   <div class="dlg">
     <div class="dlg-h"><h2 id="dsT">曲を追加</h2><button class="x" type="button" data-close aria-label="閉じる">×</button></div>
-    <div class="dlg-b">
-      <div class="tabs" role="tablist">
-        <button role="tab" id="tabText" aria-selected="true" aria-controls="panText" type="button">音符を入力</button>
-        <button role="tab" id="tabXml" aria-selected="false" aria-controls="panXml" type="button">MusicXMLを読み込む</button>
-      </div>
-      <div id="panText" role="tabpanel" aria-labelledby="tabText" style="display:grid;gap:14px">
-        <div class="grid2">
-          <div class="field"><label for="sTitle">曲名</label><input type="text" id="sTitle" placeholder="例：校歌 1番"></div>
-          <div class="field"><label for="sComposer">作曲者・メモ（任意）</label><input type="text" id="sComposer"></div>
+    <div class="dlg-b" id="songBody">
+      <aside class="img-pane" id="imgPane" hidden aria-label="取り込んだ楽譜">
+        <div class="img-bar">
+          <b>楽譜</b><span class="sp"></span>
+          <button type="button" class="mini-btn" id="imgOut" aria-label="縮小">－</button>
+          <button type="button" class="mini-btn" id="imgIn" aria-label="拡大">＋</button>
+          <button type="button" class="mini-btn" id="imgFit">全体</button>
+          <button type="button" class="mini-btn" id="imgOff">閉じる</button>
         </div>
-        <div class="grid3">
-          <div class="field"><label for="sBpm">テンポ（BPM）</label><input type="number" id="sBpm" value="90" min="30" max="240"></div>
-          <div class="field"><label for="sBpb">1小節の拍数</label><select id="sBpb"><option value="2">2拍</option><option value="3">3拍</option><option value="4" selected>4拍</option><option value="6">6拍</option></select></div>
-          <div class="field"><label for="sPickup">弱起の拍数</label><input type="number" id="sPickup" value="0" min="0" max="5" step="0.5"></div>
+        <div class="img-view" id="imgView" tabindex="0"></div>
+      </aside>
+      <div class="song-main">
+        <div class="img-pick">
+          <label class="mini-btn" for="imgFile">楽譜の写真・画像を横に並べて見る</label>
+          <input type="file" id="imgFile" accept="image/*,application/pdf" hidden>
+          <span class="help">見ながら音符を入力できます。画像はこの画面に表示するだけで、保存も送信もしません。</span>
         </div>
-        <div class="field">
-          <label for="sNotes">メロディ（音名:拍数）</label>
-          <textarea id="sNotes" rows="5" placeholder="C4:1 D4:1 E4:2 R:1 G4:1.5 F#4:0.5"></textarea>
-          <p class="help">音名はC4（中央のド）のように書きます。シャープは「#」、フラットは「b」。休符は「R」。拍数は「:2」「:0.5」「:3/2」のように指定（省略すると1拍）。小節線「|」は無視されます。</p>
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tabAudio" aria-selected="true" aria-controls="panAudio" type="button">音源から作る</button>
+          <button role="tab" id="tabText" aria-selected="false" aria-controls="panText" type="button">音符を入力</button>
+          <button role="tab" id="tabXml" aria-selected="false" aria-controls="panXml" type="button">MusicXML</button>
         </div>
-        <div class="field"><label for="sDesc">練習のポイント（任意）</label><input type="text" id="sDesc"></div>
-        <div class="pv" id="sPreview">メロディを入力すると、ここに確認結果が出ます。</div>
-      </div>
-      <div id="panXml" role="tabpanel" aria-labelledby="tabXml" style="display:none;gap:14px">
-        <div class="field">
-          <label for="xmlIn">MusicXMLファイル（.musicxml / .xml / .mxl）</label>
-          <input type="file" id="xmlIn" accept=".musicxml,.xml,.mxl">
-          <p class="help">MuseScore・Finale・Sibelius・Noteflightなどで「MusicXML」として書き出したファイルを読み込めます。パートごとに別の曲として登録されます（繰り返し記号は展開されません）。</p>
+        <div id="panAudio" role="tabpanel" aria-labelledby="tabAudio" style="display:grid;gap:14px">
+          <div class="field">
+            <label for="audioIn">音源ファイル（mp3・wav・m4a など）</label>
+            <input type="file" id="audioIn" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac">
+            <p class="help">その声部の旋律だけが入った音源（パート練習用の音源、ピアノで弾いたパート音など）を選ぶと、音の高さとリズムを自動で読み取って音符にします。ファイルはこの端末の中だけで処理します。</p>
+          </div>
+          <div class="grid3" id="audioOpts">
+            <div class="field" id="aChField" hidden><label for="aCh">使うチャンネル</label><select id="aCh"><option value="mix">左右を混ぜる</option><option value="0">左だけ</option><option value="1">右だけ</option></select></div>
+            <div class="field"><label for="aStart">使う範囲：開始（秒）</label><input type="number" id="aStart" value="0" min="0" step="0.5"></div>
+            <div class="field"><label for="aEnd">終了（秒）</label><input type="number" id="aEnd" min="0" step="0.5" placeholder="最後まで"></div>
+          </div>
+          <div class="field">
+            <label class="switch"><input type="checkbox" id="aBpmAuto" checked><span>テンポは自動で調べる<small>曲のBPMがわかるときは、チェックを外して数字を入れると正確になります</small></span></label>
+            <input type="number" id="aBpm" value="90" min="40" max="180" disabled aria-label="テンポ（BPM）" style="max-width:120px">
+          </div>
+          <div><button class="pri" type="button" id="aGo" disabled>この設定で読み取る</button></div>
+          <div class="pv" id="audioPv">ファイルを選ぶと、自動で読み取りを始めます。ピアノ伴奏つきの音源では、旋律をうまく読み取れないことがあります。</div>
         </div>
-        <div class="pv" id="xmlPreview">ファイルを選ぶと、読み込めたパートが表示されます。</div>
+        <div id="panText" role="tabpanel" aria-labelledby="tabText" style="display:none;gap:14px">
+          <div class="pv from" id="sFrom" hidden></div>
+          <div class="grid2">
+            <div class="field"><label for="sTitle">曲名</label><input type="text" id="sTitle" placeholder="例：校歌 1番"></div>
+            <div class="field"><label for="sComposer">作曲者・メモ（任意）</label><input type="text" id="sComposer"></div>
+          </div>
+          <div class="grid3">
+            <div class="field"><label for="sBpm">テンポ（BPM）</label><input type="number" id="sBpm" value="90" min="30" max="240"></div>
+            <div class="field"><label for="sBpb">1小節の拍数</label><select id="sBpb"><option value="2">2拍</option><option value="3">3拍</option><option value="4" selected>4拍</option><option value="6">6拍</option></select></div>
+            <div class="field"><label for="sPickup">弱起の拍数</label><input type="number" id="sPickup" value="0" min="0" max="5" step="0.5"></div>
+          </div>
+          <div class="field">
+            <label for="sNotes">メロディ（音名:拍数）</label>
+            <textarea id="sNotes" rows="5" placeholder="C4:1 D4:1 E4:2 R:1 G4:1.5 F#4:0.5"></textarea>
+            <div class="pal" id="pal" aria-label="ボタンで音符を入力">
+              <div class="pal-row"><span class="pl">長さ</span><div class="pal-b" id="palDur" role="group" aria-label="音の長さ（拍）">
+                <button type="button" data-d="0.5">0.5</button><button type="button" data-d="1" class="on">1</button><button type="button" data-d="1.5">1.5</button><button type="button" data-d="2">2</button><button type="button" data-d="3">3</button><button type="button" data-d="4">4</button><span class="u">拍</span></div></div>
+              <div class="pal-row"><span class="pl">高さ</span><div class="pal-b" role="group" aria-label="オクターブと変化記号">
+                <button type="button" id="palOd" aria-label="1オクターブ下げる">低く</button><output id="palOct" class="oct">4</output><button type="button" id="palOu" aria-label="1オクターブ上げる">高く</button>
+                <button type="button" id="palSh" aria-pressed="false">♯</button><button type="button" id="palFl" aria-pressed="false">♭</button></div></div>
+              <div class="pal-row"><span class="pl">音</span><div class="pal-b" id="palNotes" role="group" aria-label="音を追加">
+                <button type="button" data-n="C">ド</button><button type="button" data-n="D">レ</button><button type="button" data-n="E">ミ</button><button type="button" data-n="F">ファ</button><button type="button" data-n="G">ソ</button><button type="button" data-n="A">ラ</button><button type="button" data-n="B">シ</button><button type="button" data-n="R" class="rest">休み</button></div></div>
+              <div class="pal-row"><span class="pl"></span><div class="pal-b"><button type="button" id="palUndo">ひとつ戻す</button><button type="button" id="palClear">全部消す</button></div></div>
+            </div>
+            <p class="help">ボタンで入力するか、音名を直接書けます。音名はC4（中央のド）のように書き、シャープは「#」、フラットは「b」、休符は「R」。拍数は「:2」「:0.5」「:3/2」のように指定（省略すると1拍）。小節線「|」は無視されます。</p>
+          </div>
+          <div class="field"><label for="sDesc">練習のポイント（任意）</label><input type="text" id="sDesc"></div>
+          <div class="pv" id="sPreview">メロディを入力すると、ここに確認結果が出ます。</div>
+        </div>
+        <div id="panXml" role="tabpanel" aria-labelledby="tabXml" style="display:none;gap:14px">
+          <div class="field">
+            <label for="xmlIn">MusicXMLファイル（.musicxml / .xml / .mxl）</label>
+            <input type="file" id="xmlIn" accept=".musicxml,.xml,.mxl">
+            <p class="help">MuseScore・Finale・Sibelius・Noteflightなどで「MusicXML」として書き出したファイルを読み込めます。パートごとに別の曲として登録されます（繰り返し記号は展開されません）。</p>
+          </div>
+          <div class="pv" id="xmlPreview">ファイルを選ぶと、読み込めたパートが表示されます。</div>
+        </div>
       </div>
     </div>
     <div class="dlg-f">
@@ -539,13 +616,14 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
       <p class="pv" id="dataCount"></p>
       <section class="data-sec">
         <h3>保存する</h3>
-        <p>登録した曲（テンポ設定つき）を、1つのJSONファイルに書き出します。次に開いたときや別のPCで読み込めば、MusicXMLを選び直す必要はありません。録音した声は含まれません（録音のWAV保存は結果画面から）。</p>
+        <p>登録した曲（曲ごとのテンポつき）と、選べば設定や履歴を、1つのJSONファイルに書き出します。次に開いたときや別のPCで読み込めば、MusicXMLや設定をやり直す必要はありません。録音した声は含まれません（録音のWAV保存は結果画面から）。</p>
+        <label class="switch"><input type="checkbox" id="dataSettings" checked><span>いまの設定も含める<small>歌う高さ・テンポ・キー・採点方法・録音のしかた・ガイド音の大きさ</small></span></label>
         <label class="switch"><input type="checkbox" id="dataHist" checked><span>練習の履歴（点数の記録）も含める</span></label>
         <div class="row"><button class="pri" type="button" id="dataSave">JSONに保存</button></div>
       </section>
       <section class="data-sec">
         <h3>読み込む</h3>
-        <p>保存したJSONを選ぶと、今のデータに追加します。同じ曲は上書きされ、履歴は重複しません。</p>
+        <p>保存したJSONを選ぶと、今のデータに追加します。同じ曲は上書きされ、履歴は重複しません。設定が入っているファイルなら、設定も元に戻ります。</p>
         <div class="row"><button class="pri" type="button" id="dataPick">JSONを選ぶ</button><input type="file" id="dataIn" accept=".json,application/json" hidden></div>
       </section>
       <p class="pv" id="dataMsg" role="status" hidden></p>
@@ -1567,6 +1645,139 @@ function makeFeedback(res, song, opts) {
   return out;
 }
 
+
+/* ======================= 音源（mp3など）→ 旋律 ======================= */
+/** extractTrack の結果（ピッチ・音量）から、1本の旋律を音符列にする。
+ *  o.bpm を渡すとそのテンポで量子化、省略するとテンポも推定する。 */
+function transcribeMelody(track, o) {
+  o = o || {};
+  const T = track.T, hop = track.hop, t0 = track.t0 || 0;
+  const midi = track.midi, db = track.db, voiced = track.voiced;
+  const warnings = [];
+  // 1) 音源のチューニングのずれ（A=440からの偏り）を推定
+  let sx = 0, sy = 0, cnt = 0;
+  for (let i = 0; i < T; i++) if (voiced[i]) { const a = 2 * Math.PI * (midi[i] - Math.floor(midi[i])); sx += Math.cos(a); sy += Math.sin(a); cnt++; }
+  let off = 0;
+  if (cnt >= 20 && Math.hypot(sx, sy) / cnt > 0.35) off = Math.atan2(sy, sx) / (2 * Math.PI);
+  const q = new Float32Array(T).fill(NaN);
+  for (let i = 0; i < T; i++) if (voiced[i]) q[i] = Math.round(midi[i] - off);
+  // 2) 同じ半音が続く区間にまとめる
+  let runs = [];
+  for (let i = 0; i < T;) {
+    if (!voiced[i]) { i++; continue; }
+    let j = i;
+    while (j + 1 < T && voiced[j + 1] && q[j + 1] === q[i]) j++;
+    runs.push({ s: i, e: j, q: q[i] });
+    i = j + 1;
+  }
+  // 音の途中の短い乱れ（前後が同じ音）はつなぐ
+  let merged = [];
+  for (let k = 0; k < runs.length; k++) {
+    const r = runs[k], last = merged[merged.length - 1];
+    if (last && last.q === r.q && r.s - last.e - 1 <= 2) { last.e = r.e; continue; }
+    if (merged.length >= 1) {
+      const prev = merged[merged.length - 1], nxt = runs[k + 1];
+      if (r.e - r.s + 1 < 6 && nxt && prev.q === nxt.q && r.s - prev.e - 1 <= 3 && nxt.s - r.e - 1 <= 3) { prev.e = nxt.e; k++; continue; }
+    }
+    merged.push({ s: r.s, e: r.e, q: r.q });
+  }
+  merged = merged.filter(r => r.e - r.s + 1 >= 6);
+  // 3) 同じ高さの音が続いても、音量の谷→立ち上がりがあれば別の音に分ける（同音連打）
+  const sm = new Float32Array(T);
+  for (let i = 0; i < T; i++) { let a = 0, c = 0; for (let k = Math.max(0, i - 1); k <= Math.min(T - 1, i + 1); k++) { a += db[k]; c++; } sm[i] = a / c; }
+  const segs = [];
+  for (const r of merged) {
+    let st = r.s;
+    for (let i = r.s + 6; i <= r.e - 6; i++) {
+      let isMin = true;
+      for (let k = i - 3; k <= i + 3; k++) if (sm[k] < sm[i]) { isMin = false; break; }
+      if (!isMin) continue;
+      let mx = -1e9;
+      for (let k = i + 1; k <= Math.min(r.e, i + 6); k++) mx = Math.max(mx, sm[k]);
+      if (mx - sm[i] >= 5 && i - st >= 6) { segs.push({ s: st, e: i - 1, q: r.q }); st = i; i += 5; }
+    }
+    segs.push({ s: st, e: r.e, q: r.q });
+  }
+  const tS = segs.map(g => t0 + g.s * hop), tE = segs.map(g => t0 + (g.e + 1) * hop);
+  const n = segs.length;
+  const stats = { notes: n, voicedSec: track.stats ? track.stats.voicedSec : cnt * hop, tuneCents: Math.round(off * 100) };
+  const empty = (msg) => ({ notes: [], bpm: o.bpm || 90, sub: 2, fit: 0, warnings: [msg], stats, segs: [] });
+  if (n < 3) return empty('旋律を取り出せませんでした。声や楽器の音が小さい、または伴奏が多い音源の可能性があります。');
+  // 4) テンポの推定（音の出だし間隔が、拍の半分の格子にそろう度合い）
+  const ioi = [];
+  for (let i = 0; i + 1 < n; i++) ioi.push(tS[i + 1] - tS[i]);
+  const fitOf = (g) => { let a = 0; for (const d of ioi) a += Math.cos(2 * Math.PI * d / g); return a / ioi.length; };
+  let P = o.bpm ? 60 / o.bpm : 0, fit = 0, sub = 2;
+  if (!o.bpm) {
+    // 拍の半分(2)または4分の1(4)を最小単位とみなして、拍の長さPの候補をすべて試す
+    const cands = { 2: [], 4: [] };
+    for (const sb of [2, 4]) for (let p = 0.30; p <= 1.30; p *= 1.01) cands[sb].push({ p, f: fitOf(p / sb) });
+    const fmax = Math.max(...cands[2].map(c => c.f), ...cands[4].map(c => c.f));
+    let best = null;
+    for (const sb of [2, 4]) {
+      const cs = cands[sb];
+      for (let i = 1; i < cs.length - 1; i++) {
+        const c = cs[i];
+        if (c.f < cs[i - 1].f || c.f < cs[i + 1].f || c.f < fmax * 0.8) continue;
+        const prior = Math.exp(-0.5 * Math.pow(Math.log(c.p / 0.7) / 0.45, 2));
+        const sc = c.f * (sb === 4 ? 0.95 : 1) + 0.3 * prior;
+        if (!best || sc > best.sc) best = { sc, p: c.p, f: c.f, sub: sb };
+      }
+    }
+    if (!best) best = { p: 0.65, f: fmax, sub: 2 };
+    P = best.p; fit = best.f; sub = best.sub;
+  } else fit = fitOf(P / 2);
+  // 5) 格子への当てはめ（開始位置とテンポの微調整）
+  const refine = (g0, fixedG) => {
+    let a = tS[0], g = g0;
+    for (let it = 0; it < 4; it++) {
+      const k = tS.map(t => Math.round((t - a) / g));
+      if (fixedG) {
+        const res = tS.map((t, i) => t - g * k[i]);
+        a = median(res);
+      } else {
+        const mk = mean(k), mt = mean(tS);
+        let nu = 0, de = 0;
+        for (let i = 0; i < n; i++) { nu += (k[i] - mk) * (tS[i] - mt); de += (k[i] - mk) * (k[i] - mk); }
+        if (de > 1e-9) { const g2 = nu / de; if (Math.abs(g2 / g0 - 1) < 0.08) { g = g2; a = mt - g * mk; } }
+      }
+    }
+    return { a, g };
+  };
+  let { a, g } = refine(P / sub, !!o.bpm);
+  const tooFast = () => ioi.filter(d => d < 0.65 * g).length / ioi.length;
+  if (sub === 2 && tooFast() > 0.15) { sub = 4; ({ a, g } = refine(g / 2, !!o.bpm)); }
+  const bpm = Math.max(30, Math.min(240, Math.round(60 / (g * sub))));
+  // 6) 音符列にする
+  const sIdx = [], eIdx = [];
+  for (let i = 0; i < n; i++) {
+    let s = Math.round((tS[i] - a) / g);
+    if (i > 0 && s <= sIdx[i - 1]) s = sIdx[i - 1] + 1;
+    sIdx.push(s); eIdx.push(Math.round((tE[i] - a) / g));
+  }
+  const base = sIdx[0];
+  const unit = 1 / sub;
+  const notes = [];
+  for (let i = 0; i < n; i++) {
+    const s = sIdx[i] - base, e = eIdx[i] - base;
+    let dur, rest = 0;
+    if (i + 1 < n) {
+      const nx = sIdx[i + 1] - base;
+      if (nx - e >= 1 && tS[i + 1] - tE[i] >= 0.6 * g) { dur = Math.max(1, Math.min(e - s, nx - s)); rest = nx - s - dur; }
+      else dur = nx - s;
+    } else dur = Math.max(1, e - s);
+    notes.push({ m: segs[i].q, d: dur * unit });
+    if (rest >= 1) notes.push({ m: null, d: rest * unit });
+  }
+  const ms = notes.filter(x => x.m != null).map(x => x.m);
+  const lo = Math.min(...ms), hi = Math.max(...ms);
+  const span = (tE[n - 1] - tS[0]);
+  if (hi - lo > 24 || n / Math.max(1, span) > 8) warnings.push('和音や伴奏が混ざっているようです。旋律だけの音源（パート練習用など）を選ぶと正確になります。');
+  if (!o.bpm && fit < 0.55) warnings.push('テンポがうまく取れていません。曲のBPMがわかれば入力して「この設定で読み直す」を押してください。');
+  stats.lo = lo; stats.hi = hi;
+  return { notes, bpm, sub, fit: Math.round(fit * 100) / 100, warnings, stats, segs: segs.map((x, i) => ({ q: x.q, t: tS[i], te: tE[i] })) };
+}
+
 /* ======================= 公開API ======================= */
 async function analyzeRecording(samples, sr, song, opts) {
   const track = await extractTrack(samples, sr, opts);
@@ -1578,7 +1789,7 @@ async function analyzeRecording(samples, sr, song, opts) {
 
 return {
   midiToName, midiToJp, midiToFreq, freqToMidi, fold, parsePitch, parseMelody, formatMelody, buildTimeline,
-  decimate, removeDC, extractTrack, liveFrame, analyze, makeFeedback, analyzeRecording, pitchScoreOf, median, mean, theilSen
+  decimate, removeDC, extractTrack, transcribeMelody, liveFrame, analyze, makeFeedback, analyzeRecording, pitchScoreOf, median, mean, theilSen
 };
 })();
 
@@ -2872,19 +3083,20 @@ function parseMusicXML(text) {
 }
 
 /* ---------------- 曲の追加ダイアログ ---------------- */
-const dlgSong = { editId: null, xml: null, tab: 'text', temp: null };
+const dlgSong = { editId: null, xml: null, tab: 'audio', temp: null, audio: null, busy: false, tok: 0 };
+const TAB_IDS = { audio: ['#tabAudio', '#panAudio'], text: ['#tabText', '#panText'], xml: ['#tabXml', '#panXml'] };
 function setSongTab(tab) {
   dlgSong.tab = tab;
-  $('#tabText').setAttribute('aria-selected', tab === 'text');
-  $('#tabXml').setAttribute('aria-selected', tab === 'xml');
-  $('#panText').style.display = tab === 'text' ? 'grid' : 'none';
-  $('#panXml').style.display = tab === 'xml' ? 'grid' : 'none';
+  Object.keys(TAB_IDS).forEach(k => {
+    $(TAB_IDS[k][0]).setAttribute('aria-selected', k === tab);
+    $(TAB_IDS[k][1]).style.display = k === tab ? 'grid' : 'none';
+  });
   $('#sListen').hidden = tab !== 'text';
   updateSongPreview();
 }
 function openSongDialog(song) {
   dlgSong.editId = song && song.source === 'custom' ? song.id : null;
-  dlgSong.xml = null;
+  dlgSong.xml = null; dlgSong.audio = null; dlgSong.busy = false; dlgSong.tok++;
   $('#dsT').textContent = dlgSong.editId ? '曲を編集' : '曲を追加';
   $('#sSave').textContent = dlgSong.editId ? '変更を保存' : 'この曲を登録';
   const s = dlgSong.editId ? song : null;
@@ -2896,10 +3108,15 @@ function openSongDialog(song) {
   $('#sNotes').value = s ? s.melody : '';
   $('#sDesc').value = s ? (s.desc || '') : '';
   $('#xmlIn').value = ''; $('#xmlPreview').textContent = 'ファイルを選ぶと、読み込めたパートが表示されます。'; $('#xmlPreview').classList.remove('err');
+  $('#audioIn').value = ''; $('#aStart').value = 0; $('#aEnd').value = ''; $('#aCh').value = 'mix'; $('#aChField').hidden = true;
+  $('#aBpmAuto').checked = true; $('#aBpm').disabled = true; $('#aBpm').value = 90; $('#aGo').disabled = true;
+  setAudioMsg('ファイルを選ぶと、自動で読み取りを始めます。ピアノ伴奏つきの音源では、旋律をうまく読み取れないことがあります。');
+  $('#sFrom').hidden = true;
+  closeScoreImage();
   $('#tabXml').hidden = !!dlgSong.editId;
-  setSongTab('text');
+  setSongTab(dlgSong.editId ? 'text' : 'audio');
   $('#dlgSong').showModal();
-  $('#sTitle').focus();
+  (dlgSong.editId ? $('#sTitle') : $('#audioIn')).focus();
 }
 function readSongForm() {
   const parsed = E.parseMelody($('#sNotes').value, 1);
@@ -2973,20 +3190,189 @@ async function listenTemp() {
   const a = await ensureAC();
   const tmp = { notes: f.parsed.notes, bpm: f.bpm, beatsPerBar: f.beatsPerBar, pickup: f.pickup };
   const tl = E.buildTimeline(tmp, { bpm: f.bpm });
-  const T0 = a.currentTime + 0.15;
+  const T0 = a.currentTime + 0.15 - tl.songStartSec;
   scheduleGuide(T0, tl, { clicks: false });
   toast('試聴中…', 1800);
 }
+
+/* ---------------- 音源（mp3など）から旋律を作る ---------------- */
+function setAudioMsg(text, err) { const pv = $('#audioPv'); pv.textContent = text; pv.classList.toggle('err', !!err); }
+function fmtMin(sec) { const m = Math.floor(sec / 60), s = Math.round(sec % 60); return m + ':' + String(s).padStart(2, '0'); }
+async function loadAudioFile(file) {
+  if (dlgSong.busy) return;
+  dlgSong.audio = null; $('#aGo').disabled = true;
+  setAudioMsg('ファイルを読み込んでいます…');
+  let buf;
+  try {
+    const a = await ensureAC();
+    buf = await a.decodeAudioData(await file.arrayBuffer());
+  } catch (e) {
+    console.warn(e);
+    setAudioMsg('このファイルは読み込めませんでした。mp3・wav・m4a などの音声ファイルを選んでください。', true);
+    return;
+  }
+  if (buf.duration > 600) { setAudioMsg('10分以内の音源を選ぶか、あらかじめ旋律の部分だけに切り出してください。', true); return; }
+  if (buf.duration < 1) { setAudioMsg('音源が短すぎます。', true); return; }
+  dlgSong.audio = { name: file.name, buf, key: null, track: null };
+  $('#aStart').value = 0; $('#aEnd').value = '';
+  $('#aEnd').placeholder = '最後まで（' + fmtMin(buf.duration) + '）';
+  $('#aChField').hidden = buf.numberOfChannels < 2;
+  $('#aCh').value = 'mix';
+  $('#aGo').disabled = false;
+  await runAudioAnalysis();
+}
+async function runAudioAnalysis() {
+  const A = dlgSong.audio;
+  if (!A || dlgSong.busy) return;
+  const tok = dlgSong.tok;
+  const chSel = $('#aCh').value;
+  const st = Math.max(0, parseFloat($('#aStart').value) || 0);
+  let en = parseFloat($('#aEnd').value);
+  if (!(en > st)) en = A.buf.duration;
+  en = Math.min(en, A.buf.duration);
+  if (en - st < 1) { setAudioMsg('使う範囲が短すぎます。開始と終了の秒数を確かめてください。', true); return; }
+  dlgSong.busy = true; $('#aGo').disabled = true;
+  try {
+    const key = [chSel, st, en].join('|');
+    if (A.key !== key) {
+      const sr = A.buf.sampleRate, i0 = Math.floor(st * sr), n = Math.floor(en * sr) - i0, chs = A.buf.numberOfChannels;
+      const use = (chSel === 'mix' || chs === 1) ? Array.from({ length: chs }, (_, c) => c) : [Math.min(parseInt(chSel, 10), chs - 1)];
+      const x = new Float32Array(n);
+      use.forEach(c => { const d = A.buf.getChannelData(c); for (let i = 0; i < n; i++) x[i] += d[i0 + i] / use.length; });
+      setAudioMsg('音の高さを調べています… 0%');
+      A.track = await E.extractTrack(x, sr, { onProgress: (p) => { if ($('#dlgSong').open) setAudioMsg('音の高さを調べています… ' + Math.round(p * 100) + '%'); } });
+      A.key = key;
+    }
+    if (!$('#dlgSong').open || tok !== dlgSong.tok) return;
+    const auto = $('#aBpmAuto').checked;
+    const want = Math.max(40, Math.min(180, parseFloat($('#aBpm').value) || 90));
+    let r = E.transcribeMelody(A.track, auto ? {} : { bpm: want });
+    if (auto && r.notes.length && (r.bpm > 180 || r.bpm < 40)) r = E.transcribeMelody(A.track, { bpm: r.bpm > 180 ? Math.round(r.bpm / 2) : Math.round(r.bpm * 2) });
+    if (!r.notes.length) { setAudioMsg(r.warnings[0] || '旋律を取り出せませんでした。', true); return; }
+    $('#sNotes').value = E.formatMelody(r.notes);
+    $('#sBpm').value = r.bpm;
+    $('#aBpm').value = r.bpm;
+    if (!$('#sTitle').value.trim()) $('#sTitle').value = A.name.replace(/\.[^.]+$/, '').slice(0, 60);
+    const ps = r.notes.filter(x => x.m != null);
+    const range = `${E.midiToJp(r.stats.lo)}${Math.floor(r.stats.lo / 12) - 1}〜${E.midiToJp(r.stats.hi)}${Math.floor(r.stats.hi / 12) - 1}`;
+    const info = `${ps.length}音・♩=${r.bpm}・音域 ${range}`;
+    setAudioMsg('読み取れました：' + info + '。「音符を入力」タブで確かめてください。');
+    const from = $('#sFrom');
+    from.hidden = false;
+    from.innerHTML = '';
+    const b = document.createElement('div');
+    b.textContent = `音源「${A.name}」から読み取りました（${info}）。「試聴」で聞いて、違うところだけ直してください。` + (auto ? '' : '（テンポは指定した値で読み取りました）');
+    from.appendChild(b);
+    r.warnings.forEach(w => { const d = document.createElement('div'); d.className = 'warn'; d.textContent = '※' + w; from.appendChild(d); });
+    setSongTab('text');
+    $('#sListen').focus();
+  } catch (e) {
+    console.warn(e);
+    setAudioMsg('読み取り中にエラーが起きました。別の範囲やファイルで試してください。', true);
+  } finally {
+    if (tok === dlgSong.tok) { dlgSong.busy = false; if (dlgSong.audio) $('#aGo').disabled = false; }
+  }
+}
+
+/* ---------------- 楽譜の画像を横に並べて表示 ---------------- */
+const scoreImg = { url: null, zoom: 1 };
+function closeScoreImage() {
+  if (scoreImg.url) { URL.revokeObjectURL(scoreImg.url); scoreImg.url = null; }
+  $('#imgView').textContent = '';
+  $('#imgPane').hidden = true;
+  $('#dlgSong').classList.remove('wide');
+  $('#imgFile').value = '';
+}
+function showScoreImage(file) {
+  if (scoreImg.url) URL.revokeObjectURL(scoreImg.url);
+  scoreImg.url = URL.createObjectURL(file);
+  scoreImg.zoom = 1;
+  const view = $('#imgView');
+  view.textContent = '';
+  let el;
+  if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) { el = document.createElement('iframe'); el.title = '楽譜（PDF）'; }
+  else { el = document.createElement('img'); el.alt = '取り込んだ楽譜'; el.draggable = false; }
+  el.src = scoreImg.url;
+  view.appendChild(el);
+  $('#imgPane').hidden = false;
+  $('#dlgSong').classList.add('wide');
+  applyZoom();
+}
+function applyZoom() {
+  const el = $('#imgView').firstElementChild;
+  if (el && el.tagName === 'IMG') el.style.width = (scoreImg.zoom * 100) + '%';
+}
+
+/* ---------------- ボタンで音符を入力 ---------------- */
+const pal = { dur: 1, oct: 4, acc: 0 };
+function palRefresh() {
+  $('#palOct').textContent = pal.oct;
+  $('#palSh').setAttribute('aria-pressed', pal.acc === 1);
+  $('#palFl').setAttribute('aria-pressed', pal.acc === -1);
+  $$('#palDur button').forEach(b => b.classList.toggle('on', parseFloat(b.dataset.d) === pal.dur));
+}
+function palAppend(tok) {
+  const ta = $('#sNotes');
+  ta.value = (ta.value.trim() ? ta.value.replace(/\s+$/, '') + ' ' : '') + tok;
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+  ta.scrollTop = ta.scrollHeight;
+}
+async function palSound(midi) {
+  try { const a = await ensureAC(); tone(a.currentTime + 0.02, midi, 0.5, 0.34); } catch (e) { /* noop */ }
+}
+function bindPalette() {
+  $$('#palDur button').forEach(b => b.addEventListener('click', () => { pal.dur = parseFloat(b.dataset.d); palRefresh(); }));
+  $('#palOd').addEventListener('click', () => { pal.oct = Math.max(1, pal.oct - 1); palRefresh(); });
+  $('#palOu').addEventListener('click', () => { pal.oct = Math.min(7, pal.oct + 1); palRefresh(); });
+  $('#palSh').addEventListener('click', () => { pal.acc = pal.acc === 1 ? 0 : 1; palRefresh(); });
+  $('#palFl').addEventListener('click', () => { pal.acc = pal.acc === -1 ? 0 : -1; palRefresh(); });
+  $$('#palNotes button').forEach(b => b.addEventListener('click', () => {
+    const n = b.dataset.n;
+    if (n === 'R') { palAppend('R:' + E.formatMelody([{ m: null, d: pal.dur }]).split(':')[1]); return; }
+    const acc = pal.acc === 1 ? '#' : pal.acc === -1 ? 'b' : '';
+    const tok = n + acc + pal.oct;
+    const m = E.parsePitch(tok);
+    palAppend(tok + ':' + E.formatMelody([{ m: null, d: pal.dur }]).split(':')[1]);
+    if (m != null) palSound(m);
+    pal.acc = 0; palRefresh();
+  }));
+  $('#palUndo').addEventListener('click', () => {
+    const ta = $('#sNotes');
+    ta.value = ta.value.replace(/\s+$/, '').replace(/(^|\s)\S+$/, '').replace(/\s+$/, '');
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  $('#palClear').addEventListener('click', () => {
+    const ta = $('#sNotes');
+    if (!ta.value.trim()) return;
+    const b = $('#palClear');
+    if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.textContent = 'もう一度押すと消えます'; setTimeout(() => { b.dataset.armed = ''; b.textContent = '全部消す'; }, 3000); return; }
+    b.dataset.armed = ''; b.textContent = '全部消す';
+    ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  palRefresh();
+}
+
 function bindDialogs() {
   $$('dialog').forEach(d => {
     d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
     $$('[data-close]', d).forEach(b => b.addEventListener('click', () => d.close()));
   });
   $('#btnAddSong').addEventListener('click', () => { if (S.phase === 'idle') openSongDialog(null); });
+  $('#tabAudio').addEventListener('click', () => setSongTab('audio'));
   $('#tabText').addEventListener('click', () => setSongTab('text'));
   $('#tabXml').addEventListener('click', () => setSongTab('xml'));
   ['sTitle', 'sComposer', 'sBpm', 'sBpb', 'sPickup', 'sNotes', 'sDesc'].forEach(id => $('#' + id).addEventListener('input', updateSongPreview));
   $('#sSave').addEventListener('click', saveSongFromDialog);
+  $('#audioIn').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) loadAudioFile(f); });
+  $('#aGo').addEventListener('click', runAudioAnalysis);
+  $('#aBpmAuto').addEventListener('change', () => { $('#aBpm').disabled = $('#aBpmAuto').checked; });
+  $('#imgFile').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) showScoreImage(f); });
+  $('#imgIn').addEventListener('click', () => { scoreImg.zoom = Math.min(4, scoreImg.zoom * 1.25); applyZoom(); });
+  $('#imgOut').addEventListener('click', () => { scoreImg.zoom = Math.max(0.5, scoreImg.zoom / 1.25); applyZoom(); });
+  $('#imgFit').addEventListener('click', () => { scoreImg.zoom = 1; applyZoom(); });
+  $('#imgOff').addEventListener('click', closeScoreImage);
+  $('#dlgSong').addEventListener('close', closeScoreImage);
+  bindPalette();
   $('#sListen').addEventListener('click', listenTemp);
   $('#xmlIn').addEventListener('change', async (e) => {
     const f = e.target.files[0]; if (!f) return;
@@ -3023,13 +3409,30 @@ function bindDialogs() {
 function applyTheme(t) { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }
 /* ---------------- データの保存・読み込み（JSON） ---------------- */
 const DATA_APP = 'ChoralEval';
-function dataSnapshot(withHist) {
+function dataSnapshot(withHist, withSettings) {
   const songs = store.get('customSongs', []);
   const songBpm = {};
   songs.forEach(s => { const b = store.get(bpmKey(s.id), null); if (b != null) songBpm[s.id] = b; });
+  if (curSong() && curSong().source === 'custom') songBpm[S.songId] = S.bpm;
   const out = { app: DATA_APP, version: 1, exportedAt: new Date().toISOString(), songs, songBpm };
   if (withHist) out.history = store.get('history', []);
+  if (withSettings) {
+    // マイクの種類は端末ごとに違うので含めない
+    out.settings = { octave: S.octave, transpose: S.transpose, mode: S.mode, startTone: S.startTone, click: S.click, clickDuring: S.clickDuring, guideRec: S.guideRec, guideVol: S.guideVol };
+    out.songId = S.songId;
+  }
   return out;
+}
+/** 読み込んだ設定を検査して、使える項目だけ返す */
+function sanitizeSettings(o) {
+  const r = {};
+  if (!o || typeof o !== 'object') return r;
+  if ([-1, 0, 1].includes(o.octave)) r.octave = o.octave;
+  if (isFinite(o.transpose)) r.transpose = Math.max(-12, Math.min(12, Math.round(Number(o.transpose))));
+  if (o.mode === 'absolute' || o.mode === 'relative') r.mode = o.mode;
+  ['startTone', 'click', 'clickDuring', 'guideRec'].forEach(k => { if (typeof o[k] === 'boolean') r[k] = o[k]; });
+  if (isFinite(o.guideVol)) r.guideVol = Math.max(0, Math.min(1, Number(o.guideVol)));
+  return r;
 }
 function cleanStr(v, max) { return typeof v === 'string' ? v.slice(0, max) : ''; }
 function sanitizeSong(raw) {
@@ -3054,7 +3457,7 @@ function sanitizeHist(h) {
 function mergeImported(obj) {
   if (!obj || obj.app !== DATA_APP || !Array.isArray(obj.songs)) throw new Error('ChoralEval で保存したJSONファイルではありません。');
   const custom = store.get('customSongs', []);
-  const r = { added: 0, updated: 0, skipped: 0, histAdded: 0 };
+  const r = { added: 0, updated: 0, skipped: 0, histAdded: 0, settings: null, songId: typeof obj.songId === 'string' ? obj.songId : null };
   for (const raw of obj.songs) {
     const song = sanitizeSong(raw);
     if (!song) { r.skipped++; continue; }
@@ -3072,6 +3475,7 @@ function mergeImported(obj) {
     while (cur.length > 200) cur.shift();
     store.set('history', cur);
   }
+  if (obj.settings && typeof obj.settings === 'object') { const st = sanitizeSettings(obj.settings); if (Object.keys(st).length) r.settings = st; }
   return r;
 }
 function refreshDataInfo() {
@@ -3094,12 +3498,15 @@ async function importDataFile(file) {
     const r = mergeImported(obj);
     const keep = S.songId;
     loadSongs();
-    selectSong(S.songs.some(s => s.id === keep) ? keep : (S.songs[0] ? S.songs[0].id : null));
+    if (r.settings) { Object.assign(S, r.settings); setGuideVol(S.guideVol); applyPrefsToUI(); }
+    const want = (r.songId && S.songs.some(s => s.id === r.songId)) ? r.songId : (S.songs.some(s => s.id === keep) ? keep : (S.songs[0] ? S.songs[0].id : null));
+    selectSong(want);
     renderSongSelect();
     const parts = [];
     if (r.added) parts.push(`曲を${r.added}件追加`);
     if (r.updated) parts.push(`${r.updated}件を上書き`);
     if (r.histAdded) parts.push(`履歴を${r.histAdded}件追加`);
+    if (r.settings) parts.push('設定（テンポ・キー・採点方法など）を反映');
     msg.textContent = (parts.length ? parts.join('、') + 'しました。' : '追加するデータはありませんでした。') + (r.skipped ? `（読み込めない曲が${r.skipped}件ありました）` : '');
     if (r.skipped) msg.classList.add('err');
     refreshDataInfo();
@@ -3115,7 +3522,7 @@ function bindData() {
   $('#btnEmptyLoad').addEventListener('click', openDataDialog);
   $('#dataSave').addEventListener('click', () => {
     const d = new Date(), p2 = (x) => String(x).padStart(2, '0');
-    download(`choraleval-data-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}.json`, new Blob([JSON.stringify(dataSnapshot($('#dataHist').checked), null, 1)], { type: 'application/json' }));
+    download(`choraleval-data-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}.json`, new Blob([JSON.stringify(dataSnapshot($('#dataHist').checked, $('#dataSettings').checked), null, 1)], { type: 'application/json' }));
     const m = $('#dataMsg'); m.hidden = false; m.className = 'pv'; m.textContent = '保存しました。ダウンロードフォルダ（または指定した場所）にJSONファイルができています。';
   });
   $('#dataPick').addEventListener('click', () => $('#dataIn').click());
