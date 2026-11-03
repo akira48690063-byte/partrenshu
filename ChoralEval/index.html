@@ -670,7 +670,7 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
   </div>
 </dialog>
 
-<script>
+<script id="engineSrc">
 /* ChoralEngine — 端末内で完結する歌唱解析エンジン（外部通信なし）
  * ピッチ検出(YIN) → 目標メロディへの強制アライメント(半マルコフDP) → 音程/リズム/声の安定性の採点
  */
@@ -1157,21 +1157,28 @@ function runDP(F, nts, off, par) {
     const prev = (j - 1) * W1, cur = j * W1;
     const useBound = j > 1;
     const sExp = (par.startExp && !rest) ? par.startExp[j - 1] : null;
+    // 長さのペナルティは差(d)だけで決まるので表にしておく（ループ内で対数を計算しない）
+    const penTab = new Float64Array(dmax + 2);
+    for (let d = dmin; d <= dmax; d++) { const r = rest ? Math.log((d + 3) / (L + 3)) : Math.log(d / L); penTab[d] = lam * r * r; }
+    // 直前の音までの費用に、開始位置sだけで決まる項をまとめておく
+    const g = new Float64Array(T + 1);
+    for (let s = 0; s <= T; s++) {
+      const fp = f[prev + s];
+      if (fp >= INF) { g[s] = INF; continue; }
+      let v = fp - Pj[s] + (useBound ? bc[s] : 0);
+      if (sExp !== null) { const q = (s - sExp) / par.tau; v += par.mu * Math.min(par.cap, q * q); }
+      g[s] = v;
+    }
     for (let t = dmin; t <= T; t++) {
       let best = INF, bs = -1;
       const lo = Math.max(0, t - dmax);
       for (let s = t - dmin; s >= lo; s--) {
-        const fp = f[prev + s];
-        if (fp >= INF) continue;
-        const d = t - s;
-        let pen;
-        if (rest) { const r = Math.log((d + 3) / (L + 3)); pen = lam * r * r; }
-        else { const r = Math.log(d / L); pen = lam * r * r; }
-        let c = fp + (Pj[t] - Pj[s]) + pen + (useBound ? bc[s] : 0);
-        if (sExp !== null) { const q = (s - sExp) / par.tau; c += par.mu * Math.min(par.cap, q * q); }
+        const gs = g[s];
+        if (gs >= INF) continue;
+        const c = gs + penTab[t - s];
         if (c < best) { best = c; bs = s; }
       }
-      if (bs >= 0) { f[cur + t] = best; bk[cur + t] = bs; }
+      if (bs >= 0) { f[cur + t] = best + Pj[t]; bk[cur + t] = bs; }
     }
   }
   let bt = -1, bcost = INF;
@@ -2030,8 +2037,71 @@ function devQual(c) { const a = Math.abs(c); return a <= 25 ? 'good' : a <= 50 ?
 function fmtTime(sec) { sec = Math.max(0, sec); const m = Math.floor(sec / 60), s = Math.floor(sec % 60); return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0'); }
 function sgn(n, d) { const v = d == null ? Math.round(n) : n.toFixed(d); return (n > 0 ? '+' : '') + v; }
 
+
+/* ---------------- 重い解析は別スレッド（Worker）で行い、画面を固めない ---------------- */
+const WK = { w: null, seq: 0, jobs: new Map(), failed: false };
+const WK_MAIN = `
+self.onmessage = async (ev) => {
+  const { id, kind, args } = ev.data;
+  const onProgress = (p) => self.postMessage({ id, progress: p });
+  try {
+    let out;
+    if (kind === 'analyze') out = await ChoralEngine.analyzeRecording(args.samples, args.sr, args.song, Object.assign({}, args.opts, { onProgress }));
+    else if (kind === 'extract') out = await ChoralEngine.extractTrack(args.samples, args.sr, { onProgress });
+    else throw new Error('unknown job');
+    self.postMessage({ id, ok: true, out });
+  } catch (e) { self.postMessage({ id, ok: false, err: String((e && e.message) || e) }); }
+};`;
+function wkGet() {
+  if (WK.w) return WK.w;
+  if (WK.failed || typeof Worker === 'undefined') return null;
+  try {
+    const src = document.getElementById('engineSrc').textContent + '\n' + WK_MAIN;
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    const w = new Worker(url);
+    URL.revokeObjectURL(url);
+    w.onmessage = (ev) => {
+      const m = ev.data, job = WK.jobs.get(m.id);
+      if (!job) return;
+      if (m.progress != null) { if (job.onProgress) job.onProgress(m.progress); return; }
+      WK.jobs.delete(m.id);
+      if (m.ok) job.resolve(m.out); else job.reject(new Error(m.err));
+    };
+    w.onerror = (ev) => {
+      console.warn('worker error', ev && ev.message);
+      // 動かなかったら、以後は画面側で計算する
+      WK.failed = true; WK.w = null;
+      const jobs = [...WK.jobs.values()]; WK.jobs.clear();
+      jobs.forEach(j => j.reject(Object.assign(new Error('worker-failed'), { workerFailed: true })));
+    };
+    WK.w = w;
+    return w;
+  } catch (e) { console.warn('worker unavailable', e); WK.failed = true; return null; }
+}
+function wkRun(kind, args, onProgress, transfer) {
+  return new Promise((resolve, reject) => {
+    const w = wkGet();
+    if (!w) { reject(Object.assign(new Error('no-worker'), { workerFailed: true })); return; }
+    const id = ++WK.seq;
+    WK.jobs.set(id, { resolve, reject, onProgress });
+    try { w.postMessage({ id, kind, args }, transfer || []); }
+    catch (e) { WK.jobs.delete(id); reject(Object.assign(e, { workerFailed: true })); }
+  });
+}
+/** 録音の解析。Workerが使えないときだけ、画面側で計算する */
+async function analyzeOffThread(samples, sr, song, opts, onProgress) {
+  const o = Object.assign({}, opts); delete o.onProgress;
+  try { return await wkRun('analyze', { samples, sr, song: { id: song.id, title: song.title, bpm: song.bpm, beatsPerBar: song.beatsPerBar, pickup: song.pickup, notes: song.notes }, opts: o }, onProgress); }
+  catch (e) { if (!e.workerFailed) throw e; return E.analyzeRecording(samples, sr, song, Object.assign({}, o, { onProgress })); }
+}
+/** 音源の音の高さ・音量の抽出（曲の登録用）。samples は渡した先で使われる（コピーしない） */
+async function extractOffThread(samples, sr, onProgress) {
+  try { return await wkRun('extract', { samples, sr }, onProgress, [samples.buffer]); }
+  catch (e) { if (!e.workerFailed) throw e; return E.extractTrack(samples, sr, { onProgress }); }
+}
+
 /* ---------------- ピアノロール描画 ---------------- */
-const roll = { cv: null, g: null, w: 0, h: 0, dpr: 1, hits: [], raf: 0, drag: null, playhead: null, hover: -1 };
+const roll = { cv: null, g: null, w: 0, h: 0, dpr: 1, hits: [], raf: 0, drag: null, playhead: null, hover: -1, layers: null, rid: 0 };
 const BLACK = [false, true, false, true, false, false, true, false, true, false, true, false];
 const GUT = 48, TOPH = 26, BOTH = 8;
 
@@ -2067,6 +2137,8 @@ function rollResize() {
   rollFitView();
   requestDraw();
 }
+/** フォント名は変わらないので1回だけ調べる（毎フレーム調べると画面の再計算が起きて重い） */
+function rollFont() { return roll.fontFam || (roll.fontFam = getComputedStyle(document.body).fontFamily); }
 function plotW() { return Math.max(10, roll.w - GUT - 8); }
 function pps() { return plotW() / S.view.span; }
 function rollTotal() { const tl = curTl(); return S.result && S.result.displayEnd ? Math.max(tl.totalSec, S.result.displayEnd) : tl.totalSec; }
@@ -2124,22 +2196,39 @@ function targetAt(tl, t) { // 時刻tに鳴るべき音(なければ最も近い
 }
 const COL = { good: '#3fe0a5', warn: '#ffc83d', bad: '#ff6b7a', grey: 'rgba(200,210,235,.45)', note: '#9db0ff' };
 
-function drawRoll() {
-  const { g, w, h, dpr } = roll;
-  if (!g || !w) return;
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, w, h);
-  const song = curSong(); if (!song) return;
+/** 描く前の共通の準備（座標の計算など） */
+function rollEnv() {
+  const { w, h } = roll;
+  const song = curSong(); if (!song) return null;
   const tl = curTl(song);
   const { lo, hi } = pitchRange(tl);
   const rows = hi - lo + 1;
   const plotH = h - TOPH - BOTH;
   const rowH = plotH / rows;
-  const yC = (m) => TOPH + (hi - m + 0.5) * rowH;
   const view = S.view, P = pps();
-  const X = (t) => GUT + (t - view.t0) * P;
-  const x0 = GUT, x1 = w - 8;
+  return { w, h, song, tl, lo, hi, rows, plotH, rowH, view, P, x0: GUT, x1: w - 8,
+    yC: (m) => TOPH + (hi - m + 0.5) * rowH, X: (t) => GUT + (t - view.t0) * P };
+}
+/** 動かない部分（背景・拍の線・目標の音）。作り直しが必要かを見分ける印 */
+function rollSig(env) {
+  const { tl, view } = env;
+  let cs = 0;
+  for (let i = 0; i < tl.notes.length; i++) { const n = tl.notes[i]; cs += (n.rest ? 7 : n.midi) * (i + 1) + n.startSec * 3 + n.endSec; }
+  const r = S.result;
+  if (r && !r._rid) r._rid = ++roll.rid;
+  const dm = r && r.displayMap;
+  return [env.w, env.h, roll.dpr, env.song.id, Math.round(cs * 1000), tl.notes.length, tl.bpm, view.t0.toFixed(4), view.span.toFixed(4), S.sel, roll.hover, r ? r._rid : 0, dm ? dm.a + ',' + dm.b : '', env.lo, env.hi].join('|');
+}
+function layerCanvas(key, w, h) {
+  let c = roll[key];
+  if (!c) c = roll[key] = document.createElement('canvas');
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  return c;
+}
 
+/** 背景〜目標の音（ここは歌っている間も変わらないので、1枚の絵にしてためておく） */
+function drawBase(g, env) {
+  const { w, h, song, tl, lo, hi, rowH, plotH, view, P, x0, x1, yC, X } = env;
   g.fillStyle = '#111d3d'; g.fillRect(0, 0, w, h);
   // 鍵盤色の帯
   for (let m = lo; m <= hi; m++) {
@@ -2151,7 +2240,7 @@ function drawRoll() {
   g.save();
   g.beginPath(); g.rect(x0, 0, x1 - x0, h); g.clip();
   const bStart = Math.max(0, Math.floor(view.t0 / tl.spb) - 1), bEnd = Math.ceil((view.t0 + view.span) / tl.spb) + 1;
-  g.font = '600 11px ' + getComputedStyle(document.body).fontFamily;
+  g.font = '600 11px ' + rollFont();
   g.textBaseline = 'middle';
   for (let b = bStart; b <= bEnd; b++) {
     const t = b * tl.spb, x = X(t);
@@ -2198,7 +2287,64 @@ function drawRoll() {
     roll.hits.push({ i, x1: xa, x2: xa + ww + 2, y1: yy - 3, y2: yy + pillH + 6 });
   });
   g.restore();
+  return labels;
+}
+function drawLabels(g, env, labels) {
+  const { x0, x1, plotH } = env;
+  // 音名ラベル（軌跡の線に隠れないよう、ふち取りして最前面に）
+  g.save();
+  g.beginPath(); g.rect(x0, TOPH, x1 - x0, plotH); g.clip();
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  for (const lb of labels) {
+    g.font = '800 ' + lb.fs + 'px ' + rollFont();
+    if (!lb.missing) { g.lineWidth = 3.5; g.strokeStyle = lb.sel ? '#c6d2ff' : 'rgba(157,176,255,.95)'; g.strokeText(lb.txt, lb.x, lb.y); }
+    g.fillStyle = lb.missing ? '#9db0ff' : '#0c1630';
+    g.fillText(lb.txt, lb.x, lb.y);
+  }
+  g.restore();
+}
+function drawGutter(g, env) {
+  const { w, h, lo, hi, yC } = env;
+  // 左の音名
+  g.fillStyle = '#0c1630'; g.fillRect(0, 0, GUT, h);
+  g.textAlign = 'right'; g.textBaseline = 'middle';
+  g.font = '700 11px ' + rollFont();
+  for (let m = lo; m <= hi; m++) {
+    const pc = ((m % 12) + 12) % 12;
+    if (BLACK[pc]) continue;
+    const y = yC(m);
+    if (y < TOPH || y > h - BOTH) continue;
+    g.fillStyle = pc === 0 ? '#e8edfb' : '#7d8cb4';
+    g.fillText(E.midiToJp(m) + (pc === 0 ? Math.floor(m / 12) - 1 : ''), GUT - 7, y);
+  }
+  g.fillStyle = '#243660'; g.fillRect(GUT - 1, 0, 1, h);
+  g.fillStyle = '#0c1630'; g.fillRect(0, 0, GUT, TOPH);
+}
 
+function drawRoll() {
+  const { g, w, h, dpr } = roll;
+  if (!g || !w) return;
+  const env = rollEnv();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, roll.cv.width, roll.cv.height);
+  if (!env) return;
+  // 動かない部分は、変わったときだけ描き直す
+  const sig = rollSig(env);
+  if (!roll.layers || roll.layers.sig !== sig) {
+    const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+    const bg = layerCanvas('baseCv', pw, ph).getContext('2d');
+    bg.setTransform(dpr, 0, 0, dpr, 0, 0); bg.clearRect(0, 0, w, h);
+    roll.hits = [];
+    const labels = drawBase(bg, env);
+    const lg = layerCanvas('labCv', pw, ph).getContext('2d');
+    lg.setTransform(dpr, 0, 0, dpr, 0, 0); lg.clearRect(0, 0, w, h);
+    drawLabels(lg, env, labels);
+    drawGutter(lg, env);
+    roll.layers = { sig };
+  }
+  g.drawImage(roll.baseCv, 0, 0);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const { lo, hi, rowH, plotH, view, x0, x1, yC, X, tl } = env;
   // 歌ったピッチ
   g.save();
   g.beginPath(); g.rect(x0, TOPH, x1 - x0, plotH); g.clip();
@@ -2232,19 +2378,9 @@ function drawRoll() {
     }, 0.14);
   }
   g.restore();
-
-  // 音名ラベル（軌跡の線に隠れないよう、ふち取りして最前面に）
-  g.save();
-  g.beginPath(); g.rect(x0, TOPH, x1 - x0, plotH); g.clip();
-  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
-  for (const lb of labels) {
-    g.font = '800 ' + lb.fs + 'px ' + getComputedStyle(document.body).fontFamily;
-    if (!lb.missing) { g.lineWidth = 3.5; g.strokeStyle = lb.sel ? '#c6d2ff' : 'rgba(157,176,255,.95)'; g.strokeText(lb.txt, lb.x, lb.y); }
-    g.fillStyle = lb.missing ? '#9db0ff' : '#0c1630';
-    g.fillText(lb.txt, lb.x, lb.y);
-  }
-  g.restore();
-
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.drawImage(roll.labCv, 0, 0);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
   // 再生位置
   if (roll.playhead != null) {
     const x = X(roll.playhead);
@@ -2254,21 +2390,6 @@ function drawRoll() {
       g.fillStyle = '#fff'; g.beginPath(); g.moveTo(x - 5, TOPH - 3); g.lineTo(x + 5, TOPH - 3); g.lineTo(x, TOPH + 4); g.closePath(); g.fill();
     }
   }
-
-  // 左の音名
-  g.fillStyle = '#0c1630'; g.fillRect(0, 0, GUT, h);
-  g.textAlign = 'right'; g.textBaseline = 'middle';
-  g.font = '700 11px ' + getComputedStyle(document.body).fontFamily;
-  for (let m = lo; m <= hi; m++) {
-    const pc = ((m % 12) + 12) % 12;
-    if (BLACK[pc]) continue;
-    const y = yC(m);
-    if (y < TOPH || y > h - BOTH) continue;
-    g.fillStyle = pc === 0 ? '#e8edfb' : '#7d8cb4';
-    g.fillText(E.midiToJp(m) + (pc === 0 ? Math.floor(m / 12) - 1 : ''), GUT - 7, y);
-  }
-  g.fillStyle = '#243660'; g.fillRect(GUT - 1, 0, 1, h);
-  g.fillStyle = '#0c1630'; g.fillRect(0, 0, GUT, TOPH);
 }
 function roundRect(g, x, y, w, h, r) {
   g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.arcTo(x + w, y, x + w, y + r, r);
@@ -2456,13 +2577,13 @@ function setPhase(p, text) {
 }
 function overlay(o) {
   const el = $('#rollOver');
-  if (!o) { el.hidden = true; syncEmpty(); return; }
-  el.hidden = false; syncEmpty();
+  if (!o) { if (!el.hidden) { el.hidden = true; syncEmpty(); } return; }
+  if (el.hidden) { el.hidden = false; syncEmpty(); }
   const big = $('#overBig'), msg = $('#overMsg'), bar = $('#overBar');
-  big.textContent = o.big || ''; big.hidden = !o.big;
-  msg.textContent = o.msg || ''; msg.hidden = !o.msg;
-  bar.hidden = o.progress == null;
-  if (o.progress != null) $('i', bar).style.width = Math.round(o.progress * 100) + '%';
+  setTxt(big, o.big || ''); if (big.hidden === !!o.big) big.hidden = !o.big;
+  setTxt(msg, o.msg || ''); if (msg.hidden === !!o.msg) msg.hidden = !o.msg;
+  if (bar.hidden !== (o.progress == null)) bar.hidden = o.progress == null;
+  if (o.progress != null) { const pw = Math.round(o.progress * 100) + '%', ib = $('i', bar); if (ib.style.width !== pw) ib.style.width = pw; }
 }
 function setHint(kind) {
   const h = $('#stageHint');
@@ -2479,25 +2600,24 @@ function updateMeter() {
   const fresh = performance.now() - mic.lastBlockAt < 400 && mic.stream;
   const pk = fresh ? mic.peak : 0;
   const db = pk > 0 ? 20 * Math.log10(pk) : -90;
-  bar.style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%';
-  bar.className = pk >= 0.98 ? 'clip' : (db > -8 ? 'hot' : '');
+  // 値が変わったときだけ書き換える（同じ値を書くだけでも再描画の計算が走る）
+  const wv = Math.round(Math.max(0, Math.min(100, (db + 60) / 60 * 100)));
+  const wp = wv + '%'; if (bar.style.width !== wp) bar.style.width = wp;
+  const cl = pk >= 0.98 ? 'clip' : (db > -8 ? 'hot' : '');
+  if (bar.className !== cl) bar.className = cl;
 }
+function setTxt(el, t) { if (el.textContent !== t) el.textContent = t; }
 function setLive(frame, tNow) {
   const el = $('#live');
-  if (!frame || !frame.voiced) { $('#liveNote').textContent = '―'; $('#liveCents').textContent = ''; el.dataset.q = ''; return; }
+  if (!frame || !frame.voiced) { setTxt($('#liveNote'), '―'); setTxt($('#liveCents'), ''); if (el.dataset.q !== '') el.dataset.q = ''; return; }
   const tl = S.rec ? S.rec.tl : curTl();
   const nt = (S.phase === 'recording' || S.phase === 'counting') && tNow != null ? targetAt(tl, tNow) : null;
   const near = Math.round(frame.midi);
-  $('#liveNote').textContent = E.midiToJp(frame.midi);
-  if (nt) {
-    const dev = E.fold((frame.midi - nt.midi) * 100);
-    $('#liveCents').textContent = `${sgn(dev)}¢`;
-    el.dataset.q = devQual(dev);
-  } else {
-    const dev = (frame.midi - near) * 100;
-    $('#liveCents').textContent = `${sgn(dev)}¢`;
-    el.dataset.q = devQual(dev);
-  }
+  setTxt($('#liveNote'), E.midiToJp(frame.midi));
+  const dev = nt ? E.fold((frame.midi - nt.midi) * 100) : (frame.midi - near) * 100;
+  setTxt($('#liveCents'), `${sgn(dev)}¢`);
+  const q = devQual(dev);
+  if (el.dataset.q !== q) el.dataset.q = q;
 }
 function liveSample() {
   if (!mic.stream || mic.recent.length < 2600) return null;
@@ -2701,7 +2821,7 @@ async function runAnalysis(samples, sr, song, opts, meta) {
   await new Promise(r => setTimeout(r, 30));
   let res;
   try {
-    res = await E.analyzeRecording(samples, sr, song, { ...opts, onProgress: (p) => overlay({ msg: '歌声を解析しています…', progress: p }) });
+    res = await analyzeOffThread(samples, sr, song, opts, (p) => overlay({ msg: '歌声を解析しています…', progress: p }));
   } catch (e) {
     console.error(e);
     overlay(null); setPhase('idle');
@@ -3240,7 +3360,7 @@ async function runAudioAnalysis() {
       const x = new Float32Array(n);
       use.forEach(c => { const d = A.buf.getChannelData(c); for (let i = 0; i < n; i++) x[i] += d[i0 + i] / use.length; });
       setAudioMsg('音の高さを調べています… 0%');
-      A.track = await E.extractTrack(x, sr, { onProgress: (p) => { if ($('#dlgSong').open) setAudioMsg('音の高さを調べています… ' + Math.round(p * 100) + '%'); } });
+      A.track = await extractOffThread(x, sr, (p) => { if ($('#dlgSong').open) setAudioMsg('音の高さを調べています… ' + Math.round(p * 100) + '%'); });
       A.key = key;
     }
     if (!$('#dlgSong').open || tok !== dlgSong.tok) return;
