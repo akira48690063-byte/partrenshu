@@ -536,9 +536,27 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
         </div>
         <div id="panAudio" role="tabpanel" aria-labelledby="tabAudio" style="display:grid;gap:14px">
           <div class="field">
+            <label for="aKind">音源の種類</label>
+            <select id="aKind">
+              <option value="solo">旋律だけの音源（パート練習用・ピアノのパート音など）</option>
+              <option value="mix">伴奏つきの音源（ピアノ伴奏・ほかの声部が入っている）</option>
+            </select>
+          </div>
+          <div class="field" id="aRangeField" hidden>
+            <label for="aRange">取り出したい旋律の高さ</label>
+            <select id="aRange">
+              <option value="auto">指定しない（いちばん目立つ旋律を追う）</option>
+              <option value="s">高い声（ソプラノ・女声）</option>
+              <option value="a">中くらいの高さ（アルト）</option>
+              <option value="t">低めの声（テノール・男声の高い方）</option>
+              <option value="b">低い声（バス）</option>
+            </select>
+            <p class="help">伴奏の音が混ざっていると、旋律を取り違えることがあります。取り出したい声部の高さを選ぶと、その範囲の音だけを追うので正確になります。</p>
+          </div>
+          <div class="field">
             <label for="audioIn">音源ファイル（mp3・wav・m4a など）</label>
             <input type="file" id="audioIn" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac">
-            <p class="help">その声部の旋律だけが入った音源（パート練習用の音源、ピアノで弾いたパート音など）を選ぶと、音の高さとリズムを自動で読み取って音符にします。ファイルはこの端末の中だけで処理します。</p>
+            <p class="help">音の高さとリズムを自動で読み取って音符にします。ファイルはこの端末の中だけで処理します。</p>
           </div>
           <div class="grid3" id="audioOpts">
             <div class="field" id="aChField" hidden><label for="aCh">使うチャンネル</label><select id="aCh"><option value="mix">左右を混ぜる</option><option value="0">左だけ</option><option value="1">右だけ</option></select></div>
@@ -550,7 +568,7 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
             <input type="number" id="aBpm" value="90" min="40" max="180" disabled aria-label="テンポ（BPM）" style="max-width:120px">
           </div>
           <div><button class="pri" type="button" id="aGo" disabled>この設定で読み取る</button></div>
-          <div class="pv" id="audioPv">ファイルを選ぶと、自動で読み取りを始めます。ピアノ伴奏つきの音源では、旋律をうまく読み取れないことがあります。</div>
+          <div class="pv" id="audioPv">ファイルを選ぶと、自動で読み取りを始めます。伴奏つきの音源は、上で「伴奏つきの音源」を選んでください（完全には読み取れないので、「原音と重ねて聞く」で確かめながら直せます）。</div>
         </div>
         <div id="panText" role="tabpanel" aria-labelledby="tabText" style="display:none;gap:14px">
           <div class="pv from" id="sFrom" hidden></div>
@@ -593,6 +611,7 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
     </div>
     <div class="dlg-f">
       <button class="mini-btn" type="button" id="sListen">試聴</button>
+      <button class="mini-btn" type="button" id="sListenOrig" hidden>原音と重ねて聞く</button>
       <button class="mini-btn" type="button" data-close>キャンセル</button>
       <button class="pri" type="button" id="sSave" disabled>この曲を登録</button>
     </div>
@@ -1653,7 +1672,186 @@ function makeFeedback(res, song, opts) {
 }
 
 
+
+/* ======================= 伴奏つき音源 → 旋律（和音の中から一番目立つ線を追う） ======================= */
+/** 伴奏が混ざった音源から、一番目立つ旋律の線を追って、extractTrack と同じ形の結果を返す。
+ *  各フレームで「倍音がそろっている音の高さ」を点数（サリエンス）にして、なめらかにつながる線を選ぶ。
+ *  opts: { fLo, fHi（探す音の高さ Hz）, onProgress } */
+async function extractMelodyTrack(samples, sr, opts) {
+  opts = opts || {};
+  const fLo = opts.fLo || 100, fHi = opts.fHi || 1100;
+  const fMin = Math.min(fLo, 50);           // 点数の計算は低い方まで広げる（低音の倍音を旋律と取り違えないため）
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) { const a = Math.abs(samples[i]); if (a > peak) peak = a; }
+  const dec = decimate(removeDC(samples), sr, 16000);
+  const x = dec.data, fs = dec.fs;
+  const N = 4096, WL = opts.winLen || 4096, hop = Math.round(fs * 0.01);
+  const T = Math.max(0, Math.floor((x.length - WL) / hop) + 1);
+  const win = new Float64Array(WL);
+  for (let i = 0; i < WL; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (WL - 1));
+  const binHz = fs / N, kLo = Math.max(2, Math.floor(60 / binHz)), kHi = Math.min(N / 2 - 2, Math.floor(5000 / binHz));
+  const cLo = 1200 * Math.log2(fMin / 55), cHi = 1200 * Math.log2(fHi / 55), cUser = 1200 * Math.log2(fLo / 55);   // 55Hz(A1)からのセント
+  const NB = Math.ceil((cHi - cLo) / 10) + 1;
+  const H = opts.harmonics || 12, hw = [], ALPHA = opts.alpha != null ? opts.alpha : 0.9;
+  for (let h = 1; h <= H; h++) hw.push(Math.pow(ALPHA, h - 1));
+  const K = 6;                              // 各フレームで残す候補の数
+  const candC = new Float32Array(T * K).fill(NaN);   // 候補の高さ（セント）
+  const candS = new Float32Array(T * K);             // 候補の点数
+  const frameMax = new Float32Array(T), db = new Float32Array(T);
+  const re = new Float64Array(N), im = new Float64Array(N), mag = new Float64Array(N / 2 + 1), lm = new Float64Array(N / 2 + 1);
+  const sal = new Float64Array(NB);
+  const pf = new Float64Array(400), pa = new Float64Array(400);
+  const BETA = opts.beta != null ? opts.beta : 0.6;
+  // 伴奏の拍を拾うための「音の立ち上がりの強さ」（5フレーム前との差の合計）。テンポ推定に使う
+  const FL = 5, nb = kHi - kLo + 1, ring = Array.from({ length: FL }, () => new Float32Array(nb));
+  const flux = new Float32Array(T);
+  for (let t = 0; t < T; t++) {
+    const st = t * hop;
+    for (let i = 0; i < WL; i++) { re[i] = x[st + i] * win[i]; im[i] = 0; }
+    for (let i = WL; i < N; i++) { re[i] = 0; im[i] = 0; }
+    fft(re, im);
+    let mx = 0;
+    for (let k = kLo - 1; k <= kHi + 1; k++) { const m = Math.sqrt(re[k] * re[k] + im[k] * im[k]); mag[k] = m; if (m > mx) mx = m; }
+    db[t] = 20 * Math.log10(mx / N * 4 + 1e-9);
+    {
+      const cur = ring[t % FL], prv = t >= FL ? ring[(t - FL) % FL] : null;   // 同じ枠を使い回す（t-FL と t は同じ枠）
+      let fx = 0;
+      for (let k = 0; k < nb; k++) {
+        const l = Math.log(1 + mag[kLo + k] / N * 400);
+        if (prv) { const d = l - prv[k]; if (d > 0) fx += d; }
+        cur[k] = l;
+      }
+      flux[t] = fx;
+    }
+    // スペクトルの山（周波数と大きさ）を拾う
+    const thr = mx * 0.0056;   // 最大より45dB下まで
+    let np = 0;
+    for (let k = kLo; k <= kHi && np < 400; k++) {
+      const m = mag[k];
+      if (m > thr && m > mag[k - 1] && m >= mag[k + 1]) {
+        const a = Math.log(mag[k - 1] + 1e-12), b = Math.log(m + 1e-12), c = Math.log(mag[k + 1] + 1e-12);
+        const den = a - 2 * b + c;
+        const d = den < -1e-9 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den)) : 0;
+        pf[np] = (k + d) * binHz; pa[np] = Math.pow(m / mx, BETA); np++;
+      }
+    }
+    sal.fill(0);
+    for (let p = 0; p < np; p++) {
+      for (let h = 1; h <= H; h++) {
+        const f0 = pf[p] / h;
+        if (f0 < fMin * 0.97) break;
+        if (f0 > fHi * 1.03) continue;
+        const c = (1200 * Math.log2(f0 / 55) - cLo) / 10;
+        const v = pa[p] * hw[h - 1];
+        const b0 = Math.max(0, Math.ceil(c - 4)), b1 = Math.min(NB - 1, Math.floor(c + 4));
+        for (let b = b0; b <= b1; b++) { const w = Math.cos((b - c) / 4 * Math.PI / 2); sal[b] += v * w * w; }
+      }
+    }
+    // 点数の山を上位K個、候補にする
+    let fm = 0;
+    for (let b = 0; b < NB; b++) if (sal[b] > fm) fm = sal[b];
+    frameMax[t] = fm;
+    if (fm > 0) {
+      const used = [];
+      for (let q = 0; q < K; q++) {
+        let bb = -1, bv = fm * 0.12;
+        for (let b = 1; b < NB - 1; b++) {
+          if (cLo + b * 10 >= cUser - 20 && sal[b] > bv && sal[b] >= sal[b - 1] && sal[b] >= sal[b + 1]) {
+            let near = false; for (const u of used) if (Math.abs(u - b) < 6) { near = true; break; }
+            if (!near) { bb = b; bv = sal[b]; }
+          }
+        }
+        if (bb < 0) break;
+        used.push(bb);
+        const l = sal[bb - 1], c0 = sal[bb], r = sal[bb + 1], den = l - 2 * c0 + r;
+        const d = den < -1e-12 ? Math.max(-0.5, Math.min(0.5, 0.5 * (l - r) / den)) : 0;
+        candC[t * K + q] = cLo + (bb + d) * 10; candS[t * K + q] = c0;
+      }
+    }
+    if (opts.onProgress && t % 200 === 0) { opts.onProgress(0.9 * t / T); await yieldTick(); }
+  }
+  // 候補のあいだを、なめらかにつながる線として選ぶ（ビタビ法）
+  const OCT = opts.octPenalty != null ? opts.octPenalty : 0.8;      // オクターブの跳躍は、取り違えの典型なので重くする
+  const LAMBDA = 0.08 / 100, JUMP = 1.0;      // 1半音動くごとに0.08、最大1.0（大きな跳躍も許すが、オクターブの取り違えは起こしにくくする）
+  const cost = new Float64Array(T * K).fill(1e9), back = new Int8Array(T * K).fill(-1);
+  for (let t = 0; t < T; t++) {
+    for (let q = 0; q < K; q++) {
+      const c = candC[t * K + q];
+      if (isNaN(c)) continue;
+      const em = 1 - candS[t * K + q] / (frameMax[t] || 1);
+      let best = 0, bi = -1;
+      if (t > 0) {
+        best = 1e9;
+        for (let p = 0; p < K; p++) {
+          const pc = candC[(t - 1) * K + p];
+          if (isNaN(pc)) continue;
+          const dc = Math.abs(c - pc);
+          const v = cost[(t - 1) * K + p] + Math.min(JUMP, dc * LAMBDA) + ((dc > 1050 && dc < 1350) ? OCT : 0);
+          if (v < best) { best = v; bi = p; }
+        }
+        if (bi < 0) best = 0;
+      }
+      cost[t * K + q] = best + em; back[t * K + q] = bi;
+    }
+    // 候補がまったくないフレームでは、ここまでの費用を持ち越す
+    let any = false; for (let q = 0; q < K; q++) if (!isNaN(candC[t * K + q])) { any = true; break; }
+    if (!any && t > 0) { /* 次のフレームは bi<0 で最初からになる */ }
+  }
+  const midi = new Float32Array(T).fill(NaN), voiced = new Uint8Array(T), lineSal = new Float32Array(T);
+  let q = -1;
+  for (let t = T - 1; t >= 0; t--) {
+    if (q < 0) {
+      let bv = 1e18;
+      for (let k = 0; k < K; k++) if (!isNaN(candC[t * K + k]) && cost[t * K + k] < bv) { bv = cost[t * K + k]; q = k; }
+      if (q < 0) continue;
+    }
+    const c = candC[t * K + q];
+    midi[t] = 69 + (c + 1200 * Math.log2(55 / 440)) / 100;
+    lineSal[t] = candS[t * K + q];
+    q = back[t * K + q];
+  }
+  // 選んだ線の強さで「旋律がある/ない」を決める
+  const lv = []; for (let t = 0; t < T; t++) if (!isNaN(midi[t])) lv.push(lineSal[t]);
+  const ref = percentile(lv, 0.9);
+  for (let t = 0; t < T; t++) voiced[t] = (!isNaN(midi[t]) && lineSal[t] >= ref * 0.25 && db[t] > -70) ? 1 : 0;
+  // 短い乱れをならす
+  const med = new Float32Array(T).fill(NaN);
+  for (let i = 0; i < T; i++) { if (!voiced[i]) continue; const w = []; for (let k = Math.max(0, i - 3); k <= Math.min(T - 1, i + 3); k++) if (voiced[k]) w.push(midi[k]); med[i] = median(w); }
+  for (let i = 0; i < T; i++) if (voiced[i]) midi[i] = med[i];
+  for (let i = 0; i < T;) { if (!voiced[i]) { i++; continue; } let j = i; while (j < T && voiced[j]) j++; if (j - i < 4) for (let k = i; k < j; k++) { voiced[k] = 0; midi[k] = NaN; } i = j; }
+  // 音量の目安は、選んだ線の強さ（伴奏の音量ではなく旋律の強さで、同音の連打を見分けるため）
+  const dbLine = new Float32Array(T);
+  for (let t = 0; t < T; t++) dbLine[t] = voiced[t] ? 20 * Math.log10(lineSal[t] / (ref || 1) + 1e-6) - 20 : -120;
+  const vf = voiced.reduce((s, v) => s + v, 0);
+  if (opts.onProgress) opts.onProgress(1);
+  return {
+    hop: 0.01, T, t0: WL / 2 / fs, sr, fs, midi, db: dbLine, clar: new Float32Array(T).fill(1), voiced, f0: new Float32Array(T), flux,
+    stats: { peak, clipFrac: 0, noiseDb: -90, p95Db: percentile(db, 0.95), gateDb: -70, voicedSec: vf * 0.01, durationSec: samples.length / sr, brightnessDb: NaN }
+  };
+}
+
 /* ======================= 音源（mp3など）→ 旋律 ======================= */
+/** 音の立ち上がりの強さ（flux）から、「拍の長さ P 秒」がどれだけそれらしいかを 0〜1 で返す関数を作る。flux が無ければ null */
+function beatStrength(flux, hop) {
+  if (!flux || flux.length < 300) return null;
+  const T = flux.length, W = 50;           // 前後0.5秒の平均を引いて、立ち上がりだけを残す
+  const f = new Float32Array(T), cs = new Float64Array(T + 1);
+  for (let i = 0; i < T; i++) cs[i + 1] = cs[i] + flux[i];
+  for (let i = 0; i < T; i++) { const a = Math.max(0, i - W), b = Math.min(T, i + W + 1); f[i] = Math.max(0, flux[i] - (cs[b] - cs[a]) / (b - a)); }
+  let e0 = 0; for (let i = 0; i < T; i++) e0 += f[i] * f[i];
+  if (e0 < 1e-9) return null;
+  const acAt = (lagSec) => {                // 小数の遅れは前後の整数の遅れから補間する
+    const L = lagSec / hop, l0 = Math.floor(L), fr = L - l0;
+    const one = (l) => { let a = 0; for (let i = 0; i + l < T; i++) a += f[i] * f[i + l]; return a / e0; };
+    return one(l0) * (1 - fr) + one(l0 + 1) * fr;
+  };
+  const memo = new Map();
+  const raw = (P) => { const k = Math.round(P / hop); if (!memo.has(k)) memo.set(k, (acAt(P) + 0.5 * acAt(2 * P)) / 1.5); return memo.get(k); };
+  let mx = 1e-9;
+  for (let p = 0.30; p <= 1.30; p *= 1.03) mx = Math.max(mx, raw(p));
+  return (P) => Math.max(0, raw(P) / mx);
+}
+
 /** extractTrack の結果（ピッチ・音量）から、1本の旋律を音符列にする。
  *  o.bpm を渡すとそのテンポで量子化、省略するとテンポも推定する。 */
 function transcribeMelody(track, o) {
@@ -1684,11 +1882,12 @@ function transcribeMelody(track, o) {
     if (last && last.q === r.q && r.s - last.e - 1 <= 2) { last.e = r.e; continue; }
     if (merged.length >= 1) {
       const prev = merged[merged.length - 1], nxt = runs[k + 1];
-      if (r.e - r.s + 1 < 6 && nxt && prev.q === nxt.q && r.s - prev.e - 1 <= 3 && nxt.s - r.e - 1 <= 3) { prev.e = nxt.e; k++; continue; }
+      if (r.e - r.s + 1 < (o.minRun || 6) && nxt && prev.q === nxt.q && r.s - prev.e - 1 <= 3 && nxt.s - r.e - 1 <= 3) { prev.e = nxt.e; k++; continue; }
     }
     merged.push({ s: r.s, e: r.e, q: r.q });
   }
-  merged = merged.filter(r => r.e - r.s + 1 >= 6);
+  const minRun = o.minRun || 6;
+  merged = merged.filter(r => r.e - r.s + 1 >= minRun);
   // 3) 同じ高さの音が続いても、音量の谷→立ち上がりがあれば別の音に分ける（同音連打）
   const sm = new Float32Array(T);
   for (let i = 0; i < T; i++) { let a = 0, c = 0; for (let k = Math.max(0, i - 1); k <= Math.min(T - 1, i + 1); k++) { a += db[k]; c++; } sm[i] = a / c; }
@@ -1701,7 +1900,10 @@ function transcribeMelody(track, o) {
       if (!isMin) continue;
       let mx = -1e9;
       for (let k = i + 1; k <= Math.min(r.e, i + 6); k++) mx = Math.max(mx, sm[k]);
-      if (mx - sm[i] >= 5 && i - st >= 6) { segs.push({ s: st, e: i - 1, q: r.q }); st = i; i += 5; }
+      let pm = -1e9;
+      for (let k = Math.max(st, i - 10); k < i; k++) pm = Math.max(pm, sm[k]);
+      // 立ち上がりの前に「谷」があること（伴奏の和音が重なっただけで音量が上がった場合は、同じ音が続いているとみなす）
+      if (mx - sm[i] >= (o.splitRise != null ? o.splitRise : 5) && pm - sm[i] >= (o.splitDip != null ? o.splitDip : 3) && i - st >= 6) { segs.push({ s: st, e: i - 1, q: r.q }); st = i; i += 5; }
     }
     segs.push({ s: st, e: r.e, q: r.q });
   }
@@ -1713,21 +1915,27 @@ function transcribeMelody(track, o) {
   // 4) テンポの推定（音の出だし間隔が、拍の半分の格子にそろう度合い）
   const ioi = [];
   for (let i = 0; i + 1 < n; i++) ioi.push(tS[i + 1] - tS[i]);
-  const fitOf = (g) => { let a = 0; for (const d of ioi) a += Math.cos(2 * Math.PI * d / g); return a / ioi.length; };
+  // 隣の音との間隔だけでなく、2つ・3つ先との間隔も使う（読み落としや余計な音があっても、格子のそろい具合が崩れにくい）
+  const lagD = [], lagW = [];
+  for (let lag = 1; lag <= 3; lag++) for (let i = 0; i + lag < n; i++) { lagD.push(tS[i + lag] - tS[i]); lagW.push(lag === 1 ? 1 : lag === 2 ? 0.6 : 0.4); }
+  const lagWsum = lagW.reduce((p, c) => p + c, 0);
+  const fitOf = (g) => { let a = 0; for (let i = 0; i < lagD.length; i++) a += lagW[i] * Math.cos(2 * Math.PI * lagD[i] / g); return a / lagWsum; };
   let P = o.bpm ? 60 / o.bpm : 0, fit = 0, sub = 2;
   if (!o.bpm) {
     // 拍の半分(2)または4分の1(4)を最小単位とみなして、拍の長さPの候補をすべて試す
     const cands = { 2: [], 4: [] };
     for (const sb of [2, 4]) for (let p = 0.30; p <= 1.30; p *= 1.01) cands[sb].push({ p, f: fitOf(p / sb) });
     const fmax = Math.max(...cands[2].map(c => c.f), ...cands[4].map(c => c.f));
+    // 伴奏つきの音源では、伴奏の拍（音の立ち上がりの周期）も手がかりにする
+    const beatAt = beatStrength(track.flux, hop);
     let best = null;
     for (const sb of [2, 4]) {
       const cs = cands[sb];
       for (let i = 1; i < cs.length - 1; i++) {
         const c = cs[i];
-        if (c.f < cs[i - 1].f || c.f < cs[i + 1].f || c.f < fmax * 0.8) continue;
+        if (c.f < cs[i - 1].f || c.f < cs[i + 1].f || c.f < fmax * (beatAt ? 0.5 : 0.8)) continue;
         const prior = Math.exp(-0.5 * Math.pow(Math.log(c.p / 0.7) / 0.45, 2));
-        const sc = c.f * (sb === 4 ? 0.95 : 1) + 0.3 * prior;
+        const sc = c.f * (sb === 4 ? 0.95 : 1) + 0.3 * prior + (beatAt ? 0.6 * beatAt(c.p) : 0);
         if (!best || sc > best.sc) best = { sc, p: c.p, f: c.f, sub: sb };
       }
     }
@@ -1779,7 +1987,7 @@ function transcribeMelody(track, o) {
   const ms = notes.filter(x => x.m != null).map(x => x.m);
   const lo = Math.min(...ms), hi = Math.max(...ms);
   const span = (tE[n - 1] - tS[0]);
-  if (hi - lo > 24 || n / Math.max(1, span) > 8) warnings.push('和音や伴奏が混ざっているようです。旋律だけの音源（パート練習用など）を選ぶと正確になります。');
+  if (hi - lo > 24 || n / Math.max(1, span) > 8) warnings.push('和音や伴奏が混ざっているようです。');
   if (!o.bpm && fit < 0.55) warnings.push('テンポがうまく取れていません。曲のBPMがわかれば入力して「この設定で読み直す」を押してください。');
   stats.lo = lo; stats.hi = hi;
   return { notes, bpm, sub, fit: Math.round(fit * 100) / 100, warnings, stats, segs: segs.map((x, i) => ({ q: x.q, t: tS[i], te: tE[i] })) };
@@ -1796,7 +2004,7 @@ async function analyzeRecording(samples, sr, song, opts) {
 
 return {
   midiToName, midiToJp, midiToFreq, freqToMidi, fold, parsePitch, parseMelody, formatMelody, buildTimeline,
-  decimate, removeDC, extractTrack, transcribeMelody, liveFrame, analyze, makeFeedback, analyzeRecording, pitchScoreOf, median, mean, theilSen
+  decimate, removeDC, extractTrack, extractMelodyTrack, transcribeMelody, liveFrame, analyze, makeFeedback, analyzeRecording, pitchScoreOf, median, mean, theilSen
 };
 })();
 
@@ -2048,6 +2256,7 @@ self.onmessage = async (ev) => {
     let out;
     if (kind === 'analyze') out = await ChoralEngine.analyzeRecording(args.samples, args.sr, args.song, Object.assign({}, args.opts, { onProgress }));
     else if (kind === 'extract') out = await ChoralEngine.extractTrack(args.samples, args.sr, { onProgress });
+    else if (kind === 'melody') out = await ChoralEngine.extractMelodyTrack(args.samples, args.sr, Object.assign({}, args.opts, { onProgress }));
     else throw new Error('unknown job');
     self.postMessage({ id, ok: true, out });
   } catch (e) { self.postMessage({ id, ok: false, err: String((e && e.message) || e) }); }
@@ -2093,6 +2302,12 @@ async function analyzeOffThread(samples, sr, song, opts, onProgress) {
   const o = Object.assign({}, opts); delete o.onProgress;
   try { return await wkRun('analyze', { samples, sr, song: { id: song.id, title: song.title, bpm: song.bpm, beatsPerBar: song.beatsPerBar, pickup: song.pickup, notes: song.notes }, opts: o }, onProgress); }
   catch (e) { if (!e.workerFailed) throw e; return E.analyzeRecording(samples, sr, song, Object.assign({}, o, { onProgress })); }
+}
+/** 伴奏つき音源から旋律の線だけを追う（曲の登録用）。opts: { fLo, fHi } */
+async function melodyOffThread(samples, sr, opts, onProgress) {
+  const o = Object.assign({}, opts); delete o.onProgress;
+  try { return await wkRun('melody', { samples, sr, opts: o }, onProgress, [samples.buffer]); }
+  catch (e) { if (!e.workerFailed) throw e; return E.extractMelodyTrack(samples, sr, Object.assign({}, o, { onProgress })); }
 }
 /** 音源の音の高さ・音量の抽出（曲の登録用）。samples は渡した先で使われる（コピーしない） */
 async function extractOffThread(samples, sr, onProgress) {
@@ -3203,7 +3418,7 @@ function parseMusicXML(text) {
 }
 
 /* ---------------- 曲の追加ダイアログ ---------------- */
-const dlgSong = { editId: null, xml: null, tab: 'audio', temp: null, audio: null, busy: false, tok: 0 };
+const dlgSong = { editId: null, xml: null, tab: 'audio', temp: null, audio: null, busy: false, tok: 0, abOff: null, abNodes: null };
 const TAB_IDS = { audio: ['#tabAudio', '#panAudio'], text: ['#tabText', '#panText'], xml: ['#tabXml', '#panXml'] };
 function setSongTab(tab) {
   dlgSong.tab = tab;
@@ -3212,11 +3427,12 @@ function setSongTab(tab) {
     $(TAB_IDS[k][1]).style.display = k === tab ? 'grid' : 'none';
   });
   $('#sListen').hidden = tab !== 'text';
+  $('#sListenOrig').hidden = tab !== 'text' || dlgSong.abOff == null;
   updateSongPreview();
 }
 function openSongDialog(song) {
   dlgSong.editId = song && song.source === 'custom' ? song.id : null;
-  dlgSong.xml = null; dlgSong.audio = null; dlgSong.busy = false; dlgSong.tok++;
+  dlgSong.xml = null; dlgSong.audio = null; dlgSong.busy = false; dlgSong.tok++; dlgSong.abOff = null; stopListenOrig();
   $('#dsT').textContent = dlgSong.editId ? '曲を編集' : '曲を追加';
   $('#sSave').textContent = dlgSong.editId ? '変更を保存' : 'この曲を登録';
   const s = dlgSong.editId ? song : null;
@@ -3230,7 +3446,8 @@ function openSongDialog(song) {
   $('#xmlIn').value = ''; $('#xmlPreview').textContent = 'ファイルを選ぶと、読み込めたパートが表示されます。'; $('#xmlPreview').classList.remove('err');
   $('#audioIn').value = ''; $('#aStart').value = 0; $('#aEnd').value = ''; $('#aCh').value = 'mix'; $('#aChField').hidden = true;
   $('#aBpmAuto').checked = true; $('#aBpm').disabled = true; $('#aBpm').value = 90; $('#aGo').disabled = true;
-  setAudioMsg('ファイルを選ぶと、自動で読み取りを始めます。ピアノ伴奏つきの音源では、旋律をうまく読み取れないことがあります。');
+  $('#aKind').value = 'solo'; $('#aRange').value = 'auto'; $('#aRangeField').hidden = true;
+  setAudioMsg('ファイルを選ぶと、自動で読み取りを始めます。伴奏つきの音源は、上で「伴奏つきの音源」を選んでください（完全には読み取れないので、「原音と重ねて聞く」で確かめながら直せます）。');
   $('#sFrom').hidden = true;
   closeScoreImage();
   $('#tabXml').hidden = !!dlgSong.editId;
@@ -3315,7 +3532,39 @@ async function listenTemp() {
   toast('試聴中…', 1800);
 }
 
+/** 読み取った旋律を、原音といっしょに鳴らして聞き比べる（ずれ・違う音を耳で見つける用） */
+function stopListenOrig() {
+  const N = dlgSong.abNodes; if (!N) return;
+  dlgSong.abNodes = null;
+  N.forEach(n => { try { n.stop(); } catch (e) { /* 既に終了 */ } });
+  const b = $('#sListenOrig'); if (b) b.textContent = '原音と重ねて聞く';
+}
+async function listenWithOriginal() {
+  if (dlgSong.abNodes) { stopListenOrig(); return; }
+  const A = dlgSong.audio;
+  if (!A || dlgSong.abOff == null) return;
+  const f = readSongForm();
+  const first = f.parsed.notes.length ? E.buildTimeline({ notes: f.parsed.notes, bpm: f.bpm, beatsPerBar: f.beatsPerBar, pickup: f.pickup }, { bpm: f.bpm }) : null;
+  const fn = first && first.notes.find(n => !n.rest);
+  if (!fn) return;
+  const a = await ensureAC();
+  const tl = first;
+  const lead = 1.2;
+  const at = A.stUsed + dlgSong.abOff;                    // 原音のなかで、最初の音が始まる位置（秒）
+  const from = Math.max(0, at - lead), realLead = at - from;
+  const T0 = a.currentTime + 0.15 + realLead - fn.startSec;
+  const span = Math.min(A.buf.duration - from, realLead + (tl.songEndSec - fn.startSec) + 1.5);
+  const src = a.createBufferSource(); src.buffer = A.buf;
+  const g = a.createGain(); g.gain.value = 0.9; src.connect(g); g.connect(a.destination);
+  src.start(a.currentTime + 0.15, from, span);
+  const nodes = [src].concat(scheduleGuide(T0, tl, { clicks: false }));
+  dlgSong.abNodes = nodes;
+  $('#sListenOrig').textContent = '止める';
+  src.onended = () => { if (dlgSong.abNodes === nodes) { dlgSong.abNodes = null; $('#sListenOrig').textContent = '原音と重ねて聞く'; } };
+}
+
 /* ---------------- 音源（mp3など）から旋律を作る ---------------- */
+const RANGES = { auto: [100, 1100], s: [230, 1100], a: [160, 700], t: [110, 520], b: [70, 350] };   // 取り出す声部の高さ（Hz）
 function setAudioMsg(text, err) { const pv = $('#audioPv'); pv.textContent = text; pv.classList.toggle('err', !!err); }
 function fmtMin(sec) { const m = Math.floor(sec / 60), s = Math.round(sec % 60); return m + ':' + String(s).padStart(2, '0'); }
 async function loadAudioFile(file) {
@@ -3353,26 +3602,38 @@ async function runAudioAnalysis() {
   if (en - st < 1) { setAudioMsg('使う範囲が短すぎます。開始と終了の秒数を確かめてください。', true); return; }
   dlgSong.busy = true; $('#aGo').disabled = true;
   try {
-    const key = [chSel, st, en].join('|');
+    const kind = $('#aKind').value, rng = kind === 'mix' ? $('#aRange').value : 'auto';
+    const key = [chSel, st, en, kind, rng].join('|');
     if (A.key !== key) {
       const sr = A.buf.sampleRate, i0 = Math.floor(st * sr), n = Math.floor(en * sr) - i0, chs = A.buf.numberOfChannels;
       const use = (chSel === 'mix' || chs === 1) ? Array.from({ length: chs }, (_, c) => c) : [Math.min(parseInt(chSel, 10), chs - 1)];
       const x = new Float32Array(n);
       use.forEach(c => { const d = A.buf.getChannelData(c); for (let i = 0; i < n; i++) x[i] += d[i0 + i] / use.length; });
       setAudioMsg('音の高さを調べています… 0%');
-      A.track = await extractOffThread(x, sr, (p) => { if ($('#dlgSong').open) setAudioMsg('音の高さを調べています… ' + Math.round(p * 100) + '%'); });
+      const prog = (p) => { if ($('#dlgSong').open) setAudioMsg('音の高さを調べています… ' + Math.round(p * 100) + '%'); };
+      if (kind === 'mix') {
+        const rg = RANGES[rng] || RANGES.auto;
+        A.track = await melodyOffThread(x, sr, { fLo: rg[0], fHi: rg[1] }, prog);
+      } else A.track = await extractOffThread(x, sr, prog);
       A.key = key;
+      A.stUsed = st;
     }
     if (!$('#dlgSong').open || tok !== dlgSong.tok) return;
     const auto = $('#aBpmAuto').checked;
     const want = Math.max(40, Math.min(180, parseFloat($('#aBpm').value) || 90));
-    let r = E.transcribeMelody(A.track, auto ? {} : { bpm: want });
-    if (auto && r.notes.length && (r.bpm > 180 || r.bpm < 40)) r = E.transcribeMelody(A.track, { bpm: r.bpm > 180 ? Math.round(r.bpm / 2) : Math.round(r.bpm * 2) });
-    if (!r.notes.length) { setAudioMsg(r.warnings[0] || '旋律を取り出せませんでした。', true); return; }
+    const mixed = $('#aKind').value === 'mix';
+    const base = mixed ? { minRun: 10 } : {};
+    let r = E.transcribeMelody(A.track, auto ? base : Object.assign({}, base, { bpm: want }));
+    if (auto && r.notes.length && (r.bpm > 180 || r.bpm < 40)) r = E.transcribeMelody(A.track, Object.assign({}, base, { bpm: r.bpm > 180 ? Math.round(r.bpm / 2) : Math.round(r.bpm * 2) }));
+    if (!r.notes.length) {
+      setAudioMsg((r.warnings[0] || '旋律を取り出せませんでした。') + (mixed ? '「取り出したい旋律の高さ」を選んで、もう一度読み取ってみてください。' : '伴奏が入っている音源なら、「音源の種類」で「伴奏つきの音源」を選んでください。'), true);
+      dlgSong.abOff = null; return;
+    }
+    dlgSong.abOff = r.segs.length ? r.segs[0].t : null;
     $('#sNotes').value = E.formatMelody(r.notes);
     $('#sBpm').value = r.bpm;
     $('#aBpm').value = r.bpm;
-    if (!$('#sTitle').value.trim()) $('#sTitle').value = A.name.replace(/\.[^.]+$/, '').slice(0, 60);
+    { const cur = $('#sTitle').value.trim(); if (!cur || cur === dlgSong.autoTitle) { dlgSong.autoTitle = A.name.replace(/\.[^.]+$/, '').slice(0, 60); $('#sTitle').value = dlgSong.autoTitle; } }
     const ps = r.notes.filter(x => x.m != null);
     const range = `${E.midiToJp(r.stats.lo)}${Math.floor(r.stats.lo / 12) - 1}〜${E.midiToJp(r.stats.hi)}${Math.floor(r.stats.hi / 12) - 1}`;
     const info = `${ps.length}音・♩=${r.bpm}・音域 ${range}`;
@@ -3383,7 +3644,10 @@ async function runAudioAnalysis() {
     const b = document.createElement('div');
     b.textContent = `音源「${A.name}」から読み取りました（${info}）。「試聴」で聞いて、違うところだけ直してください。` + (auto ? '' : '（テンポは指定した値で読み取りました）');
     from.appendChild(b);
-    r.warnings.forEach(w => { const d = document.createElement('div'); d.className = 'warn'; d.textContent = '※' + w; from.appendChild(d); });
+    const ws = r.warnings.slice();
+    if (!mixed && ws.some(w => /伴奏/.test(w))) ws.push('伴奏が入っている音源なら、「音源の種類」を「伴奏つきの音源」にして読み取り直してください。');
+    ws.forEach(w => { const d = document.createElement('div'); d.className = 'warn'; d.textContent = '※' + w; from.appendChild(d); });
+    if (mixed) { const d = document.createElement('div'); d.textContent = '伴奏つきの音源からの読み取りは、完全ではありません。「原音と重ねて聞く」で確かめて、違う音やテンポのずれを直してください（同じ高さの音が続くところは、1つにまとまることがあります）。'; from.appendChild(d); }
     setSongTab('text');
     $('#sListen').focus();
   } catch (e) {
@@ -3485,6 +3749,10 @@ function bindDialogs() {
   $('#sSave').addEventListener('click', saveSongFromDialog);
   $('#audioIn').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) loadAudioFile(f); });
   $('#aGo').addEventListener('click', runAudioAnalysis);
+  $('#sListenOrig').addEventListener('click', listenWithOriginal);
+  $('#aKind').addEventListener('change', () => { $('#aRangeField').hidden = $('#aKind').value !== 'mix'; if (dlgSong.audio) runAudioAnalysis(); });
+  $('#aRange').addEventListener('change', () => { if (dlgSong.audio) runAudioAnalysis(); });
+  $('#dlgSong').addEventListener('close', stopListenOrig);
   $('#aBpmAuto').addEventListener('change', () => { $('#aBpm').disabled = $('#aBpmAuto').checked; });
   $('#imgFile').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) showScoreImage(f); });
   $('#imgIn').addEventListener('click', () => { scoreImg.zoom = Math.min(4, scoreImg.zoom * 1.25); applyZoom(); });
