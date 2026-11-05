@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ChoralEval ― 合唱ピッチ・リズムコーチ</title>
+<title>ChoralEval ― 合唱AI審査員</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 40 40%27%3E%3Crect width=%2740%27 height=%2740%27 rx=%2711%27 fill=%27%230c1630%27/%3E%3Cpath d=%27M6 28C10 28 11 17 15 17S20 24 23 22 28 11 34 13%27 fill=%27none%27 stroke=%27%233fe0a5%27 stroke-width=%273%27 stroke-linecap=%27round%27/%3E%3C/svg%3E">
 <meta name="theme-color" content="#0c1630">
 <script>if (/^https?:$/.test(location.protocol)) { var l = document.createElement('link'); l.rel = 'manifest'; l.href = 'manifest.webmanifest'; document.head.appendChild(l); }</script>
-<meta name="description" content="歌声を録音して、音程・リズム・声の安定を端末内で解析する合唱練習アプリ。録音は外部に送信されません。">
+<meta name="description" content="合唱の録音ファイルを、審査員の目線（音程・リズム・発声・表現・完成度）で端末内だけで講評するアプリ。録音は外部に送信されません。">
 <style>
 :root {
   color-scheme: light;
@@ -341,6 +341,58 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
 .pal-b .u { font-size: 12px; color: var(--muted); }
 .pal-b .oct { min-width: 2em; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
 
+/* ---------- 審査員UI：録音ファイル主役の操作・講評・範囲選択 ---------- */
+.btn.main { background: var(--brand); border-color: transparent; color: var(--brand-ink); height: 52px; padding: 0 26px; font-size: 16px; border-radius: 999px; box-shadow: 0 6px 22px -8px rgba(47, 79, 216, .75); }
+.btn.main:hover:not(:disabled) { background: var(--brand); filter: brightness(1.1); }
+.btn.mic .rdot { width: 12px; height: 12px; border-radius: 50%; background: var(--rec); flex: none; }
+.btn.mic.on { background: var(--rec); border-color: transparent; color: #fff; }
+.btn.mic.on .rdot { background: #fff; border-radius: 3px; }
+details.micset { border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; background: var(--panel-2); }
+details.micset > summary { cursor: pointer; font-weight: 700; font-size: 13.5px; padding: 11px 0; }
+details.micset[open] { padding-bottom: 10px; display: grid; gap: 14px; }
+details.micset[open] > summary { padding-bottom: 0; }
+.hint .drophint { display: block; margin-top: 4px; }
+.hint b { color: var(--stage-ink); }
+.drop-veil { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; background: rgba(12, 22, 48, .72); backdrop-filter: blur(2px); pointer-events: none; }
+.drop-veil[hidden] { display: none; }
+.drop-veil > div { border: 3px dashed var(--brand); border-radius: 22px; background: var(--panel); color: var(--ink); padding: 40px 48px; font-size: 20px; font-weight: 800; box-shadow: var(--shadow); }
+
+.overall .rank { display: inline-block; margin-top: 10px; padding: 4px 14px; border-radius: 999px; font-weight: 800; font-size: 14px; background: var(--panel-2); border: 1px solid var(--line); }
+.overall .rank[data-k="gold"] { background: #fff1c2; border-color: #e3b92f; color: #6b4b00; }
+.overall .rank[data-k="silver"] { background: #e9edf3; border-color: #aab4c4; color: #3a4658; }
+.overall .rank[data-k="bronze"] { background: #f6e1d0; border-color: #c98e5c; color: #6a3e1b; }
+:root[data-theme="dark"] .overall .rank[data-k="gold"] { background: #4a3a08; color: #ffe08a; border-color: #a4821c; }
+:root[data-theme="dark"] .overall .rank[data-k="silver"] { background: #2b3445; color: #d4dcea; border-color: #5d6a80; }
+:root[data-theme="dark"] .overall .rank[data-k="bronze"] { background: #4a2e1a; color: #f2c8a4; border-color: #8e5a34; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .overall .rank[data-k="gold"] { background: #4a3a08; color: #ffe08a; border-color: #a4821c; }
+  :root:not([data-theme="light"]) .overall .rank[data-k="silver"] { background: #2b3445; color: #d4dcea; border-color: #5d6a80; }
+  :root:not([data-theme="light"]) .overall .rank[data-k="bronze"] { background: #4a2e1a; color: #f2c8a4; border-color: #8e5a34; }
+}
+.sub { grid-template-columns: 8.4em 1fr 3em; row-gap: 3px; }
+.sub .cmt { grid-column: 1 / -1; font-size: 12.5px; line-height: 1.6; color: var(--muted); margin: -2px 0 4px; }
+.sub .na { color: var(--muted); font-weight: 600; font-size: 12px; }
+
+.judge { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: var(--panel-2); display: grid; gap: 14px; }
+.judge h3 { font-size: 15px; font-weight: 800; }
+.judge .ov { font-size: 14.5px; line-height: 1.85; }
+.judge .jcols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.judge h4 { font-size: 13px; font-weight: 800; margin-bottom: 6px; }
+.judge ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.judge li { padding: 9px 12px; border-radius: 10px; background: var(--panel); border-left: 4px solid var(--line); font-size: 13.5px; line-height: 1.65; }
+.judge li b { display: block; font-size: 13.5px; margin-bottom: 1px; }
+.judge .jgood li { border-left-color: var(--good); }
+.judge .jissue li { border-left-color: #d99a00; }
+.judge .jissue li.bad { border-left-color: var(--bad); }
+.judge .jissue li small { display: inline-block; margin-left: 6px; font-weight: 600; font-size: 11.5px; color: var(--muted); }
+.judge .jlimit { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.fbh { font-size: 14px; font-weight: 800; margin-top: 4px; }
+.fb li.info { border-left-color: var(--brand); }
+
+.range-wrap { position: relative; height: 150px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); overflow: hidden; touch-action: none; }
+.range-wrap canvas { width: 100%; height: 100%; display: block; cursor: ew-resize; }
+.range-info { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 </style>
 </head>
 <body>
@@ -356,7 +408,7 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
     </svg>
     <div>
       <h1>ChoralEval</h1>
-      <p>合唱ピッチ・リズムコーチ</p>
+      <p>合唱AI審査員</p>
     </div>
   </div>
   <nav class="top-actions" aria-label="メニュー">
@@ -364,7 +416,7 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
     <button class="ghost attn" id="btnInstall" type="button" hidden title="このアプリをPCに追加して、専用のウィンドウで開けるようにします">アプリとして追加</button>
     <button class="ghost" id="btnHistory" type="button">履歴</button>
     <button class="ghost" id="btnData" type="button">データ</button>
-    <button class="ghost" id="btnHelp" type="button">採点のしくみ</button>
+    <button class="ghost" id="btnHelp" type="button">審査のしくみ</button>
     <button class="ghost" id="btnTheme" type="button" aria-label="表示テーマを切り替える" title="表示テーマ"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button>
   </nav>
 </header>
@@ -424,8 +476,10 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
         <p class="help" id="modeHelp">開始音に合わせて、指定のキーどおりに歌えているかを見ます。</p>
       </div>
 
+      <details class="micset" id="micSet">
+        <summary>マイクで録音するときの設定</summary>
       <div class="field">
-        <span class="lbl">録音のしかた</span>
+        <span class="lbl">録音のしかた（カウントと開始音）</span>
         <label class="switch"><input type="checkbox" id="optTone" checked><span>開始音を鳴らす<small>最初の音を聞いてからカウントが始まります</small></span></label>
         <label class="switch"><input type="checkbox" id="optClick" checked><span>カウントのクリックを鳴らす</span></label>
         <label class="switch"><input type="checkbox" id="optClickDuring"><span>歌っている間もクリックを鳴らす<small>スピーカーだと録音に混ざることがあります</small></span></label>
@@ -437,6 +491,8 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
         <label for="micSelect">マイク</label>
         <select id="micSelect"><option value="">既定のマイク</option></select>
       </div>
+      </details>
+
       <div class="field">
         <label for="guideVol">ガイド音の大きさ</label>
         <input type="range" id="guideVol" min="0" max="100" value="70">
@@ -469,30 +525,33 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
         <span><i style="background:var(--note)"></i>目標の音</span>
       </div>
       <div class="controls">
-        <button class="btn rec" id="btnRec" type="button"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="7"/></svg><span id="recText">録音して採点</span></button>
+        <button class="btn main" id="btnFile" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/></svg><span id="fileText">録音ファイルを選んで審査</span></button>
         <button class="btn" id="btnGuide" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg><span id="guideText">お手本を聞く</span></button>
         <button class="btn" id="btnPlayRec" type="button" disabled><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span id="playText">録音を聞く</span></button>
         <span class="sp"></span>
+        <button class="btn mic" id="btnRec" type="button"><i class="rdot" aria-hidden="true"></i><span id="recText">マイクで録音して審査</span></button>
         <button class="btn" id="btnMicTest" type="button">マイクテスト</button>
-        <button class="btn" id="btnFile" type="button">録音ファイルを解析</button>
         <input type="file" id="fileIn" accept="audio/*,video/mp4,.m4a,.wav,.mp3,.ogg,.webm,.aac" hidden>
       </div>
-      <p class="hint" id="stageHint"><span class="steps"><span><b>1</b> お手本を聞く</span><span><b>2</b> 開始音とカウントのあとに歌う</span><span><b>3</b> 点数と直すところを見る</span></span></p>
+      <p class="hint" id="stageHint"></p>
     </section>
 
     <section class="panel result" id="result" aria-labelledby="hRes" hidden>
-      <h2 id="hRes" class="sr-only">採点結果</h2>
+      <h2 id="hRes" class="sr-only">審査結果</h2>
       <div class="score-head">
         <div class="overall">
           <div class="n" id="scOverall">--</div>
+          <div class="rank" id="scRank" hidden></div>
           <div class="v" id="scVerdict"></div>
           <div class="s" id="scSong"></div>
         </div>
         <div class="subs" id="subs"></div>
       </div>
       <div class="flags" id="flags"></div>
+      <div class="judge" id="judge" hidden></div>
       <div class="detail" id="noteDetail" hidden></div>
       <div class="worst" id="worst" hidden></div>
+      <h3 class="fbh" id="fbHead" hidden>項目別の詳しい講評</h3>
       <div class="fb" id="fb"></div>
       <div class="tips" id="tips" hidden></div>
       <details class="tbl" id="tblBox">
@@ -500,7 +559,8 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
         <div class="tbl-wrap"><table id="noteTbl"></table></div>
       </details>
       <div class="res-actions">
-        <button class="pri" id="btnCopy" type="button">結果をコピー</button>
+        <button class="pri" id="btnCopy" type="button">講評をコピー</button>
+        <button class="mini-btn" id="btnReRange" type="button" hidden>審査する範囲を選び直す</button>
         <button class="mini-btn" id="btnCsv" type="button">音ごとの結果をCSVで保存</button>
         <button class="mini-btn" id="btnWav" type="button">録音をWAVで保存</button>
       </div>
@@ -618,6 +678,25 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
   </div>
 </dialog>
 
+<!-- 審査する範囲 -->
+<dialog id="dlgRange" aria-labelledby="drT">
+  <div class="dlg">
+    <div class="dlg-h"><h2 id="drT">審査する範囲を選ぶ</h2><button class="x" type="button" data-close aria-label="閉じる">×</button></div>
+    <div class="dlg-b">
+      <p class="help" id="drMsg"></p>
+      <div class="range-wrap"><canvas id="drCanvas" role="img" aria-label="録音の音量の波形。左右の持ち手をドラッグして審査する範囲を決めます"></canvas></div>
+      <div class="range-info"><span id="drInfo"></span><button class="mini-btn" id="drPlay" type="button">この範囲を聞く</button></div>
+    </div>
+    <div class="dlg-f">
+      <button class="mini-btn" type="button" data-close>キャンセル</button>
+      <button class="mini-btn" type="button" id="drWhole">録音全体を審査</button>
+      <button class="pri" type="button" id="drOk">この範囲を審査</button>
+    </div>
+  </div>
+</dialog>
+
+<div class="drop-veil" id="dropVeil" hidden><div>ここに録音ファイルをドロップして審査</div></div>
+
 <!-- 履歴 -->
 <dialog id="dlgHist" aria-labelledby="dhT">
   <div class="dlg">
@@ -654,35 +733,43 @@ dialog::backdrop { background: rgba(8, 14, 32, .6); }
 <!-- 採点のしくみ -->
 <dialog id="dlgHelp" aria-labelledby="dhelpT">
   <div class="dlg">
-    <div class="dlg-h"><h2 id="dhelpT">採点のしくみ</h2><button class="x" type="button" data-close aria-label="閉じる">×</button></div>
+    <div class="dlg-h"><h2 id="dhelpT">審査のしくみ</h2><button class="x" type="button" data-close aria-label="閉じる">×</button></div>
     <div class="dlg-b prose">
       <p>録音はこの端末の中だけで解析します。音声が外部のサーバーに送られることはありません。</p>
-      <h3>どうやって採点するの？</h3>
+      <h3>AI審査員は何を見るの？</h3>
+      <p>合唱コンクールの審査表にならって、次の5項目で講評します。総合点は、音程35%・リズム・テンポ20%・発声・音色15%・表現15%・完成度15%です。</p>
       <ul>
-        <li>声の高さを10ミリ秒ごとに測り、楽譜の音と1音ずつ対応づけます。</li>
-        <li>音程は、各音の中ほどの高さと目標との差（セント。100セント＝半音）で採点します。±15セント以内なら満点、半音（100セント）ずれるとほぼ0点です。</li>
-        <li>リズムは、各音の入りのタイミングを見ます。全体の速さや、マイクの遅れは自動で補正されるので、「拍の取り方のばらつき」が評価されます。長い音が短く切れていないか、テンポが指定どおりかも加味します。</li>
-        <li>声の安定は、音の中での音程の揺れ・声の澄み（息の混ざり具合）・音量の一定さの目安です。</li>
-        <li>総合点は、音程50%・リズム30%・声の安定20%です。</li>
+        <li><b>音程</b>：声の高さを10ミリ秒ごとに測り、楽譜の音と1音ずつ対応づけます。各音の中ほどの高さと目標との差（セント。100セント＝半音）で採点し、±15セント以内なら満点、半音ずれるとほぼ0点です。</li>
+        <li><b>リズム・テンポ</b>：各音の入りのタイミング、長い音が短く切れていないか、曲の中でテンポが走ったり遅れたりしていないかを見ます。全体の速さは自動で合わせるので、速さそのものは減点しません（設定との差は講評で知らせます）。</li>
+        <li><b>発声・音色</b>：音の中での音程の揺れ、声の澄み（息の混ざり具合）、音量の一定さの目安です。</li>
+        <li><b>表現</b>：曲全体の強弱の幅、フレーズの中の抑揚、フレーズ終わり（語尾）の収め方、フレーズの途中の音切れを見ます。録音機器の自動音量調整がかかると強弱が小さく出ます。</li>
+        <li><b>完成度</b>：最後まで歌い切れたか、後半に向けて出来が落ちていないかを見ます。</li>
       </ul>
+      <p>「賞の目安」は、総合点が88点以上で金賞レベル、76点以上で銀賞レベル、62点以上で銅賞レベルとしています。実際のコンクールの順位や評価とは別の、練習用の参考です。</p>
       <h3>機械には判定できないこと</h3>
       <ul>
-        <li>母音の響き・共鳴・表現など、音楽的な良さは測れません。声の安定の点数は、あくまで目安です。</li>
-        <li>歌詞の発音や、ハーモニーの重なり（他のパートとの和音）は評価しません。</li>
+        <li>歌詞の発音、表情、ステージでの姿、他のパートとの和音の重なり・バランスは評価できません。</li>
+        <li>母音の響きや共鳴といった音色の良し悪しは、揺れと澄みの目安でしか測れません。講評は人の耳による指導の補助として使ってください。</li>
+      </ul>
+      <h3>録音ファイルの使い方</h3>
+      <ul>
+        <li>カウントや開始音に合わせる必要はありません。歌い出しの位置と曲の速さは、自動で見つけます。</li>
+        <li>練習の前後のおしゃべりや、複数回の歌が入った長い録音は、審査する範囲を波形から選べます。</li>
+        <li>伴奏つきの録音は、ピアノの音が旋律と同じ高さで鳴ると取り違えることがあります。可能なら、パートの声が目立つ録音を使ってください。</li>
       </ul>
       <h3>うまく測るコツ</h3>
       <ul>
-        <li>静かな場所で、マイクから20〜30cm離して録音します。</li>
+        <li>静かな場所で、歌い手に近い位置に録音機器を置きます。</li>
         <li>パソコンのイヤホン端子やUSBマイクを使うと、ピッチが安定します。</li>
         <li>お手本の音をスピーカーから流したまま歌うと、お手本が録音に混ざります。ヘッドホンを使うか、お手本を聞いてから歌ってください。</li>
         <li>オクターブが違っても大丈夫です（男声は1オクターブ下で歌って構いません）。</li>
       </ul>
       <h3>点数の目安</h3>
       <table><thead><tr><th>点数</th><th>目安</th></tr></thead><tbody>
-        <tr><td>90〜</td><td>ほぼ正確。表現に挑戦する段階</td></tr>
-        <tr><td>75〜89</td><td>よく歌えている。細部を磨く</td></tr>
-        <tr><td>60〜74</td><td>形はできている。苦手な箇所を重点練習</td></tr>
-        <tr><td>〜59</td><td>音取りとテンポの確認から</td></tr>
+        <tr><td>88〜</td><td>金賞レベル。表情づくりに挑戦する段階</td></tr>
+        <tr><td>76〜87</td><td>銀賞レベル。細部を磨く</td></tr>
+        <tr><td>62〜75</td><td>銅賞レベル。苦手な箇所を重点練習</td></tr>
+        <tr><td>〜61</td><td>音取りとテンポの確認から</td></tr>
       </tbody></table>
     </div>
     <div class="dlg-f"><button class="pri" type="button" data-close>閉じる</button></div>
@@ -1244,6 +1331,65 @@ function circMedianCents(vals, ref) { // refを基準にfoldして中央値
  * 解析本体。
  * opts: { mode:'absolute'|'relative', clickMode:true|false, bpm, transpose }
  */
+function interp(x, pts) {
+  if (x <= pts[0][0]) return pts[0][1];
+  for (let k = 1; k < pts.length; k++) {
+    if (x <= pts[k][0]) { const a = pts[k - 1], b = pts[k]; return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); }
+  }
+  return pts[pts.length - 1][1];
+}
+/** 表現（強弱・フレーズの抑揚・語尾の収め方・息継ぎ）の指標。休符で区切ってフレーズに分ける。 */
+function computeExpression(metrics) {
+  const phrases = []; let cur = [];
+  metrics.forEach(m => {
+    if (m.rest) { if (m.beats >= 0.75 && cur.length) { phrases.push(cur); cur = []; } return; }
+    cur.push(m);
+  });
+  if (cur.length) phrases.push(cur);
+  const has = (m) => !m.missing && m.lvl !== undefined && isFinite(m.lvl);
+  const all = metrics.filter(m => !m.rest && has(m));
+  const out = { ok: false, nPhrases: phrases.length, nNotes: all.length };
+  if (all.length < 8) return out;
+  const smooth = (v) => v.map((x, k) => median(v.slice(Math.max(0, k - 1), Math.min(v.length, k + 2))));
+  // 強弱の幅（曲全体）
+  const sm = smooth(all.map(m => m.lvl));
+  const rangeDb = percentile(sm, 0.92) - percentile(sm, 0.08);
+  let dyn = interp(rangeDb, [[0, 20], [3, 40], [6, 66], [9, 86], [12, 100]]);
+  if (rangeDb > 22) dyn = Math.max(60, 100 - (rangeDb - 22) * 4);
+  // フレーズの中の抑揚
+  const shapes = [];
+  phrases.forEach(ph => {
+    const L = ph.filter(has);
+    if (L.length < 4) return;
+    const s2 = smooth(L.map(m => m.lvl));
+    const rng = Math.max(...s2) - Math.min(...s2);
+    shapes.push({ first: L[0], last: L[L.length - 1], rng, k: clamp((rng - 1.5) / 4.5, 0, 1) });
+  });
+  const shapeFrac = shapes.length ? mean(shapes.map(x => x.k)) : null;
+  const shape = shapeFrac == null ? null : 20 + 80 * shapeFrac;
+  // 語尾（フレーズ最後の音）の収め方
+  const endNotes = [];
+  phrases.forEach(ph => { const l = ph[ph.length - 1]; if (l && !l.missing && l.tailDelta !== undefined) endNotes.push(l); });
+  const endSc = (d) => (d >= -14 && d <= -2) ? 100 : d > -2 ? Math.max(40, 100 - (d + 2) * 8) : Math.max(40, 100 - (-14 - d) * 6);
+  const endScore = endNotes.length >= 2 ? mean(endNotes.map(l => endSc(l.tailDelta))) : null;
+  const endMean = endNotes.length >= 2 ? mean(endNotes.map(l => l.tailDelta)) : null;
+  // フレーズの途中の音切れ
+  const gaps = [];
+  phrases.forEach(ph => ph.forEach((m, k) => { if (k < ph.length - 1 && m.gapAfter !== undefined && m.gapAfter > 0.3) gaps.push(m); }));
+  let w = 0.5, s = 0.5 * dyn;
+  if (shape != null) { w += 0.3; s += 0.3 * shape; }
+  if (endScore != null) { w += 0.2; s += 0.2 * endScore; }
+  const score = clamp(s / w - Math.min(10, gaps.length * 2.5), 0, 100);
+  const byRng = shapes.slice().sort((a, b) => a.rng - b.rng);
+  const phMeans = phrases.map(ph => { const L = ph.filter(has); return L.length >= 2 ? { first: L[0], last: L[L.length - 1], lvl: mean(L.map(m => m.lvl)) } : null; }).filter(Boolean);
+  const byLvl = phMeans.slice().sort((a, b) => a.lvl - b.lvl);
+  return Object.assign(out, {
+    ok: true, score, rangeDb, dyn, shape, shapeFrac, endScore, endMean, endIdx: endNotes.map(l => l.idx), gapIdx: gaps.map(m => m.idx),
+    flat: byRng.length ? byRng[0] : null, shaped: byRng.length ? byRng[byRng.length - 1] : null,
+    softest: byLvl.length >= 2 ? byLvl[0] : null, loudest: byLvl.length >= 2 ? byLvl[byLvl.length - 1] : null
+  });
+}
+
 /** 録音が曲の長さより短いとき（途中で止めた等）に、無音フレームを足して「歌っていない部分」として扱えるようにする */
 function padTrack(track, extra) {
   if (!(extra > 0)) return track;
@@ -1376,6 +1522,17 @@ function analyze(track, song, opts) {
       base.clar = mean(mt.clar);
       const dm = mean(mt.dbs);
       base.dbSd = Math.sqrt(mean(mt.dbs.map(v => (v - dm) * (v - dm))));
+      base.lvl = dm;                                   // この音の平均音量(dB)。強弱の評価に使う
+      // 語尾の収め方：音の終わり付近と中ほどの音量差（負＝だんだん小さくなる）
+      if (lastV >= 0 && i < sg.e) {
+        const nv = lastV - i + 1;
+        if (nv >= 25) {
+          const avgDb = (a, b) => { let s = 0, c = 0; for (let k = Math.max(i, a); k <= Math.min(lastV, b); k++) if (F.voiced[k]) { s += track.db[k]; c++; } return c ? s / c : NaN; };
+          const mid = avgDb(i + Math.round(nv * 0.3), i + Math.round(nv * 0.7));
+          const tail = avgDb(lastV - Math.round(nv * 0.15), lastV);
+          if (isFinite(mid) && isFinite(tail)) base.tailDelta = tail - mid;
+        }
+      }
       // 入りの音程（最初の30%）
       const aEnd = sg.s + Math.max(2, Math.round((sg.e - sg.s) * 0.3));
       const av = [];
@@ -1392,6 +1549,12 @@ function analyze(track, song, opts) {
     if (!isNaN(base.sungOnset) && !base.missing) { ex.push(nt.startSec); ac.push(base.sungOnset); exIdx.push(j); }
     metrics.push(base);
   });
+  // 休符をはさまずにつながる2音のあいだの途切れ（フレーズの途中の息継ぎ・音切れ）
+  for (let j = 0; j + 1 < metrics.length; j++) {
+    const a = metrics[j], b = metrics[j + 1];
+    if (a.rest || b.rest || a.missing || b.missing || isNaN(a.sungOffset) || isNaN(b.sungOnset)) continue;
+    a.gapAfter = b.sungOnset - a.sungOffset;
+  }
   // --- 全体オフセット/テンポ/遅延 ---
   const good = metrics.filter(m => !m.rest && !m.missing && m.voicedFrac >= 0.4 && m.devAbs !== undefined);
   const nMatched = good.length;
@@ -1462,14 +1625,46 @@ function analyze(track, song, opts) {
   const timing = rW ? rSum / rW : 0;
   const sustain = susList.length ? susList.reduce((s, x) => s + x.w * x.s, 0) / susList.reduce((s, x) => s + x.w, 0) : null;
   const tempoScore = clickMode ? 100 * Math.exp(-Math.pow(Math.log(tempoRatio) / 0.2, 2)) : null;
-  // リズム = タイミング65 + 長さ20 + テンポ15（無い項目は按分）
-  let rw = 0.65, rs = 0.65 * timing;
+  // テンポの安定：曲を3つに分けて、それぞれの速さ(回帰の傾き)がそろっているか
+  let tempoStab = null, tempoSpread = null;
+  if (ex.length >= 12) {
+    const q3 = Math.floor(ex.length / 3), bs = [];
+    for (let k = 0; k < 3; k++) {
+      const a = k * q3, b = k === 2 ? ex.length : (k + 1) * q3;
+      const xs = ex.slice(a, b), ys = ac.slice(a, b);
+      if (xs.length >= 4 && xs[xs.length - 1] - xs[0] > 2) bs.push(theilSen(xs, ys).b);
+    }
+    if (bs.length === 3) {
+      tempoSpread = (Math.max(...bs) - Math.min(...bs)) / mean(bs);
+      tempoStab = 100 * Math.exp(-Math.pow(Math.max(0, tempoSpread - 0.05) / 0.14, 2));
+    }
+  }
+  // リズム・テンポ = 入りのタイミング60 + 音の長さ20 + テンポの安定10 + 指定テンポとの差15（無い項目は按分）
+  let rw = 0.6, rs = 0.6 * timing;
   if (sustain != null) { rw += 0.2; rs += 0.2 * sustain; }
+  if (tempoStab != null) { rw += 0.1; rs += 0.1 * tempoStab; }
   if (tempoScore != null) { rw += 0.15; rs += 0.15 * tempoScore; }
   const rhythmScore = rs / rw;
   const voiceScore = vW ? vSum / vW : 0;
   const completion = sung.length ? metrics.filter(m => !m.rest && !m.missing).length / sung.length : 0;
-  const overall = 0.5 * pitchScore + 0.3 * rhythmScore + 0.2 * voiceScore;
+  // 完成度：歌い切れたか(65) + 後半まで出来が落ちないか(35)
+  const sungOk = metrics.filter(m => !m.rest && !m.missing && m.pitchScore !== undefined);
+  let stamina = null, staminaDrop = null;
+  const th3 = Math.floor(sungOk.length / 3);
+  if (th3 >= 4) {
+    const qf = (m) => 0.6 * (absolute ? m.pitchScore : m.pitchScoreRel) + 0.4 * m.timingScore;
+    staminaDrop = mean(sungOk.slice(0, th3).map(qf)) - mean(sungOk.slice(-th3).map(qf));
+    stamina = 100 - clamp((staminaDrop - 6) * 2.2, 0, 70);
+  }
+  const finishScore = stamina == null ? completion * 100 : 0.65 * completion * 100 + 0.35 * stamina;
+  // 表現：強弱の幅・フレーズの抑揚・語尾の収め方
+  const expr = computeExpression(metrics);
+  const exprScore = expr.ok ? expr.score : null;
+  // 総合 = 音程35 + リズム20 + 発声15 + 表現15 + 完成度15（表現が測れないときは按分）
+  let ow = 0.85, os = 0.35 * pitchScore + 0.2 * rhythmScore + 0.15 * voiceScore + 0.15 * finishScore;
+  if (exprScore != null) { ow += 0.15; os += 0.15 * exprScore; }
+  const overall = os / ow;
+  res.expr = expr;
 
   // ドリフト（録音全体での音程の上下）
   const dx = [], dy = [];
@@ -1507,11 +1702,11 @@ function analyze(track, song, opts) {
   res.global = {
     offsetCents: globalOff, keyShift, tuningCents: tuning, tempoRatio, bpmEquivalent: tl.bpm / tempoRatio,
     latency, driftPerMin, driftTotal, driftThirds, driftSpan, completion, brightnessDb: stats.brightnessDb, matched: nMatched, dpCost: dp.cost,
-    leadStart: dp.leadEnd * spf + track.t0, line
+    leadStart: dp.leadEnd * spf + track.t0, line, tempoSpread, staminaDrop
   };
   res.scores = {
     overall, pitch: pitchScore, pitchAbs: absolute ? pitchScore : null, pitchRel: pitchRelScore,
-    rhythm: rhythmScore, timing, sustain, tempo: tempoScore, voice: voiceScore, completion: completion * 100
+    rhythm: rhythmScore, timing, sustain, tempo: tempoScore, tempoStab, voice: voiceScore, expr: exprScore, finish: finishScore, completion: completion * 100
   };
   // --- 注意フラグ ---
   const matchRate = sung.length ? metrics.filter(m => !m.rest && !m.missing && Math.abs(m.devRel) < 100).length / sung.length : 0;
@@ -1629,6 +1824,11 @@ function makeFeedback(res, song, opts) {
     text: shortN.slice(0, 3).map(m => `${m.label}の「${m.jp}」は音価の約${Math.round(m.sustain * 100)}%`).join('、') + 'で切れています。ブレスの量とタイミングを見直し、フレーズの最後まで音を保ちましょう。' });
   const longN = notes.filter(m => m.sustain !== undefined && m.sustain > 1.35);
   if (longN.length) R.push({ tone: 'warn', title: '休符を守れていない音', text: longN.slice(0, 3).map(m => m.label).join('・') + 'で音が休符にはみ出しています。音を切る位置を揃えましょう。' });
+  if (g.tempoSpread != null && g.tempoSpread > 0.12 && S.tempoStab < 70) R.push({ tone: 'warn', title: 'テンポが曲の中で変わっています', text: `曲の部分ごとの速さに約${Math.round(g.tempoSpread * 100)}%の差があります。速くなる所（走る）や重くなる所（もたる）を、メトロノームを使った通し練習で確認しましょう。` });
+  if (!res.clickMode && Math.abs(g.tempoRatio - 1) >= 0.12) {
+    const slow = g.tempoRatio > 1;
+    R.push({ tone: 'info', title: `設定の♩=${Math.round(tl.bpm)}より${slow ? 'ゆっくり' : '速め'}のテンポです`, text: `実際のテンポは約♩=${Math.round(g.bpmEquivalent)}でした（設定の約${Math.round(100 / g.tempoRatio)}%）。この曲を意図したテンポで歌うかどうかは、曲想に合わせて判断してください。` });
+  }
   if (!R.length && S.rhythm >= 80) R.push({ tone: 'good', title: 'リズムは安定しています', text: '拍の取り方と音の長さが安定しています。' });
   out.rhythmPoints = R;
 
@@ -1643,6 +1843,28 @@ function makeFeedback(res, song, opts) {
   if (!V.length && S.voice >= 75) V.push({ tone: 'good', title: '声は安定しています', text: '音程の揺れが小さく、澄んだ声で歌えています。' });
   out.voicePoints = V;
 
+  // --- 表現（強弱・フレーズ・語尾・息継ぎ） ---
+  const X = [];
+  const ex = res.expr;
+  if (ex && ex.ok) {
+    if (ex.rangeDb < 4.5) X.push({ tone: 'warn', title: '強弱の幅が小さく、平坦に聞こえます', text: `録音の中の音量差は約${Math.round(ex.rangeDb)}dBで、ほぼ一定の強さで歌っています。歌詞の意味に合わせて、フレーズごとにp（小さく）からf（大きく）まで幅をつけましょう。（録音機器の自動音量調整が働くと差が小さく出ます）` });
+    if (ex.shapeFrac != null && ex.shapeFrac < 0.35 && ex.flat) X.push({ tone: 'warn', title: 'フレーズの中に山が少ない', text: `${ex.flat.first.label}からのフレーズなど、フレーズの中で音量がほとんど変わっていません。いちばん伝えたい言葉に向かってクレッシェンドし、フレーズの終わりはディミヌエンドで収めましょう。` });
+    if (ex.endMean != null && ex.endMean > -1) X.push({ tone: 'warn', title: '語尾を張ったまま切っています', text: 'フレーズの最後の音が、中ほどと同じ強さのまま終わっています。最後の1拍で息をふっと収めると、和音が美しく響き、全員の終わりも揃います。' });
+    else if (ex.endMean != null && ex.endMean < -16) X.push({ tone: 'warn', title: '語尾が痩せて消えています', text: 'フレーズの最後の音が、中ほどよりかなり小さくなっています。最後まで息のスピードを保ち、音価いっぱいを支えましょう。' });
+    if (ex.gapIdx.length) {
+      const gl = ex.gapIdx.slice(0, 3).map(i => res.notes[i].label).join('・');
+      X.push({ tone: 'warn', title: `フレーズの途中で音が途切れています（${ex.gapIdx.length}か所）`, text: `${gl}${ex.gapIdx.length > 3 ? ' ほか' : ''}の直後で0.3秒以上音が途切れました。息継ぎはフレーズの切れ目で行い、途中は息を流し続けて音をつなぎましょう。` });
+    }
+    if (!X.length && S.expr >= 75) X.push({ tone: 'good', title: '強弱とフレーズに表情があります', text: `録音の中の音量差は約${Math.round(ex.rangeDb)}dB。フレーズごとの抑揚も感じられます。` + (ex.shaped ? `特に${ex.shaped.first.label}からのフレーズに山がありました。` : '') });
+  }
+  out.exprPoints = X;
+
+  // --- 完成度（歌い切る・後半の持続） ---
+  const Fp = [];
+  if (!tailStop && g.staminaDrop != null && g.staminaDrop >= 14) Fp.push({ tone: 'warn', title: '後半に出来が落ちています', text: `曲の前半に比べて、後半は音程と入りの点が約${Math.round(g.staminaDrop)}点低くなっています。集中力と息の持久力の面で、後半から始める部分練習と通し練習が有効です。` });
+  if (!tailStop && S.completion >= 98 && (g.staminaDrop == null || g.staminaDrop < 10)) Fp.push({ tone: 'good', title: '最後まで歌い切れています', text: '終盤まで集中が途切れず、出来が落ちていません。' });
+  out.finishPoints = Fp;
+
   // --- 最優先の改善箇所 ---
   const rankPool = tailStop ? notes.slice(0, tailK) : notes;
   const ranked = rankPool.map(m => {
@@ -1655,7 +1877,7 @@ function makeFeedback(res, song, opts) {
 
   // --- 練習のヒント ---
   const T = [];
-  const weakest = [['音程', S.pitch], ['リズム', S.rhythm], ['声の安定', S.voice]].sort((a, b) => a[1] - b[1])[0];
+  const weakest = [['音程', S.pitch], ['リズム', S.rhythm], ['声の安定', S.voice]].concat(S.expr != null ? [['表現', S.expr]] : []).sort((a, b) => a[1] - b[1])[0];
   if (tailStop) {
     T.push(`まずは止まらずに最後まで歌い切ることを目標にしましょう。止まった${notes[tailK].label}の前後を、ゆっくりのテンポ（${Math.max(50, Math.round(tl.bpm * 0.7))}BPM程度）で何度か歌ってから、通しで挑戦してみてください。`);
     if (ranked.length) T.push(`歌えた部分では${res.notes[ranked[0].m.idx].label}付近がいちばん課題です。そこだけ先にピアノで音を確認しておきましょう。`);
@@ -1666,9 +1888,149 @@ function makeFeedback(res, song, opts) {
   if (weakest[0] === '音程' && weakest[1] < 85 && !(tailStop && sungPitch >= 85)) T.push('ピアノやガイド音で1音ずつ確認 → ハミング → 母音（「あ」）→ 歌詞の順に重ねると、音程が定着しやすくなります。');
   if (weakest[0] === 'リズム' && weakest[1] < 85 && !tailStop) T.push('メトロノームに合わせて、歌詞を言う（リズム唱）だけの練習から始めると、入りの揃え方がつかめます。');
   if (weakest[0] === '声の安定' && weakest[1] < 85) T.push('ロングトーン（4拍×4回）で、揺れずにまっすぐ伸ばす練習を取り入れましょう。');
-  if (S.overall >= 85) T.push('次は歌詞や強弱（クレッシェンド・ディミヌエンド）の表現にも挑戦しましょう。');
+  if (weakest[0] === '表現' && weakest[1] < 80) {
+    T.push('1つのフレーズを「小さく始めて、言葉の山に向かって大きくし、最後は収める」山の形で歌い、録音で山の頂点がどこに来ているか確認しましょう。');
+    T.push('フレーズの最後の音は、最後の1拍で息をふっと収める練習を全員でそろえて行いましょう。');
+  }
+  if (S.overall >= 85 && (S.expr == null || S.expr >= 70)) T.push('次は歌詞の発音や、場面に合わせた表情づくりにも挑戦しましょう。');
   out.tips = T;
+  out.judge = buildJudge(res, out, { notes, abs, tailStop, tailK, sd, sungPitch, ranked, keyIssue });
   return out;
+}
+
+/* ======================= 審査員の講評 ======================= */
+const CRIT_DEF = [
+  { key: 'pitch', name: '音程', sub: '音の高さの正確さ' },
+  { key: 'rhythm', name: 'リズム・テンポ', sub: '入り・音の長さ・拍の安定' },
+  { key: 'voice', name: '発声・音色', sub: '揺れの少なさ・澄み' },
+  { key: 'expr', name: '表現', sub: '強弱・フレーズ・語尾' },
+  { key: 'finish', name: '完成度', sub: '歌い切る力・後半の持続' }
+];
+const RANKS = {
+  gold: { name: '金賞レベル', headline: '堂々とした完成度です' },
+  silver: { name: '銀賞レベル', headline: 'よくまとまっています' },
+  bronze: { name: '銅賞レベル', headline: 'あと一歩、磨きましょう' },
+  none: { name: 'もう一歩', headline: '基礎から固めましょう' }
+};
+function buildJudge(res, fb, c) {
+  const S = res.scores, g = res.global, tl = res.timeline;
+  const { notes, abs, tailStop, tailK, sd } = c;
+  const N = notes.length;
+  const sel = (i) => res.notes[i];
+  // ランク（賞の目安）
+  let rk = res.status === 'mismatch' ? 'none' : S.overall >= 88 ? 'gold' : S.overall >= 76 ? 'silver' : S.overall >= 62 ? 'bronze' : 'none';
+  if (S.completion < 80 && (rk === 'gold' || rk === 'silver')) rk = 'bronze';
+  let headline = RANKS[rk].headline;
+  if (res.status === 'mismatch') headline = '曲と合っていない可能性があります';
+  else if (S.completion < 80) headline = '最後まで歌い切ることが第一歩です';
+  const rank = { key: rk, name: res.status === 'mismatch' ? '判定できません' : RANKS[rk].name, headline };
+
+  // --- 項目別コメント ---
+  const worstPitch = sd.slice().sort((a, b) => Math.abs(b.dev) - Math.abs(a.dev))[0];
+  const k25 = sd.filter(m => Math.abs(m.dev) < 25).length;
+  const te = notes.filter(m => m.timingErr !== undefined);
+  const worstTime = te.slice().sort((a, b) => Math.abs(b.timingErr) - Math.abs(a.timingErr))[0];
+  const meanAbsMs = te.length ? Math.round(mean(te.map(m => Math.abs(m.timingErr))) * 1000) : null;
+  const cm = {};
+  { // 音程
+    let t = '';
+    if (c.keyIssue) t += `全体が原調より約${Math.abs(g.keyShift)}半音${g.keyShift > 0 ? '高い' : '低い'}キーでした。`;
+    if (S.pitch >= 90) t += `ほとんどの音が±25セント以内（${k25}/${N}音）で、終始確かな音程でした。`;
+    else if (S.pitch >= 80) t += `おおむね確かな音程です。${worstPitch ? `${worstPitch.label}の「${worstPitch.jp}」が${describeCents(worstPitch.dev)}でした。` : ''}`;
+    else if (S.pitch >= 65) t += `音程にばらつきがあります。${worstPitch ? `${worstPitch.label}の「${worstPitch.jp}」など、外れやすい音を重点的に確認しましょう。` : ''}`;
+    else if (S.pitch >= 45) t += '音程の安定が大きな課題です。ピアノで1音ずつ確かめることから始めましょう。';
+    else t += '音取りの確認から始めましょう。';
+    cm.pitch = t;
+  }
+  { // リズム・テンポ
+    let t;
+    if (S.rhythm >= 90) t = '入りが拍の頭にそろい、音の長さも守られていました。';
+    else if (S.rhythm >= 80) t = `おおむね拍に乗っています。${worstTime && Math.abs(worstTime.timingErr) >= 0.12 ? `${worstTime.label}の入りが${Math.round(Math.abs(worstTime.timingErr) * 1000)}ms${worstTime.timingErr > 0 ? '遅れ' : '早まり'}ました。` : ''}`;
+    else if (S.rhythm >= 65) t = `入りのタイミングにばらつきがあります。${worstTime ? `${worstTime.label}で${Math.round(Math.abs(worstTime.timingErr) * 1000)}ms${worstTime.timingErr > 0 ? '遅れ' : '早まり'}ました。` : ''}`;
+    else t = '拍の取り方に課題があります。メトロノームに合わせたリズム唱から確認しましょう。';
+    if (Math.abs(g.tempoRatio - 1) >= 0.1) t += `テンポは、設定の♩=${Math.round(tl.bpm)}に対して実際は約♩=${Math.round(g.bpmEquivalent)}（${g.tempoRatio > 1 ? 'ゆっくり' : '速め'}）でした。`;
+    cm.rhythm = t;
+  }
+  { // 発声・音色
+    const av = (k) => mean(notes.filter(m => m[k] !== undefined).map(m => m[k]));
+    const comp = [['stab', av('stabScore')], ['clr', av('clarScore')], ['even', av('evenScore')]].filter(x => isFinite(x[1])).sort((a, b) => a[1] - b[1])[0];
+    const madAll = mean(notes.filter(m => m.mad !== undefined).map(m => m.mad));
+    let t;
+    if (S.voice >= 85) t = '声がまっすぐで澄んでおり、和音に溶け込みやすい声でした。';
+    else {
+      const pre = S.voice >= 70 ? 'おおむね安定していますが、' : '';
+      t = pre + (comp && comp[0] === 'stab' ? `音の中の揺れが目立ちます（平均±${Math.round(madAll)}セント）。` : comp && comp[0] === 'clr' ? '声に息が混ざり、澄みがやや弱めでした。' : '音の途中で音量の波が目立ちました。');
+    }
+    cm.voice = t;
+  }
+  { // 表現
+    const ex = res.expr;
+    let t;
+    if (!ex || !ex.ok || S.expr == null) t = '音数が少ないため、表現は参考程度の評価です。';
+    else if (S.expr >= 80) t = '強弱とフレーズの運びに表情があり、音楽の流れが感じられました。';
+    else if (S.expr >= 60) {
+      const weak = [['強弱の幅', ex.dyn], ['フレーズの山づくり', ex.shape], ['語尾の収め方', ex.endScore]].filter(x => x[1] != null).sort((a, b) => a[1] - b[1])[0];
+      t = `強弱は見られますが、${weak ? weak[0] : '表情づけ'}にさらに工夫の余地があります。`;
+    } else t = `全体に平坦でした。録音上の音量差は約${Math.round(ex.rangeDb)}dBです。強弱の幅を広げ、フレーズごとの山を意識しましょう。`;
+    cm.expr = t;
+  }
+  { // 完成度
+    let t;
+    if (tailStop) t = `曲の途中（${notes[tailK].label}の手前）までの録音でした。`;
+    else if (S.completion < 90) t = `歌えていない音が${notes.filter(m => m.missing).length}音ありました。`;
+    else if (g.staminaDrop != null && g.staminaDrop >= 14) t = `後半に向けて出来が落ちました（前半比 約${Math.round(g.staminaDrop)}点低下）。`;
+    else if (S.finish >= 90) t = '最後まで集中を切らさず、歌い切れていました。';
+    else t = '最後まで歌えています。後半の持続力をさらに高めましょう。';
+    cm.finish = t;
+  }
+  const criteria = CRIT_DEF.map(d => ({ key: d.key, name: d.name, sub: d.sub, score: S[d.key] != null ? S[d.key] : null, comment: cm[d.key] }));
+
+  // --- 良かった点 ---
+  const goods = [];
+  if (sd.length && S.pitch >= 78) goods.push({ pri: S.pitch, title: '音程の安定', text: `全${N}音中${k25}音が±25セント以内に収まっていました。` });
+  { let best = null, run = [];
+    const flush = () => { if (run.length >= 6 && (!best || run.length > best.length)) best = run.slice(); run = []; };
+    notes.forEach(m => { const ok = !m.missing && m.timingScore !== undefined && (abs ? m.pitchScore : m.pitchScoreRel) >= 85 && m.timingScore >= 70; if (ok) run.push(m); else flush(); });
+    flush();
+    if (best) goods.push({ pri: 80 + Math.min(15, best.length / 2), title: '安定したフレーズ', text: `${best[0].label}〜${best[best.length - 1].label}（${best.length}音）は、音程も入りもそろった安定した流れでした。` });
+  }
+  { const lt = notes.filter(m => m.beats >= 2 && !m.missing && m.mad !== undefined && m.mad <= 10 && (m.sustain === undefined || m.sustain >= 0.9));
+    if (lt.length) goods.push({ pri: 75 + Math.min(15, lt.length * 3), title: '長い音の安定', text: `${lt.slice(0, 3).map(m => m.label).join('・')}${lt.length > 3 ? ' ほか' : ''}の長い音が、揺れずにまっすぐ伸びていました。` }); }
+  if (S.rhythm >= 80 && meanAbsMs != null) goods.push({ pri: S.rhythm, title: '入りのそろい', text: `入りのタイミングの平均のずれは約${meanAbsMs}msで、拍の頭によくそろっていました。` });
+  if (S.tempoStab != null && S.tempoStab >= 85) goods.push({ pri: S.tempoStab - 5, title: 'テンポの安定', text: '曲を通してテンポが一定で、走ったり遅れたりしませんでした。' });
+  if (S.voice >= 80) goods.push({ pri: S.voice - 3, title: '声質', text: '声が澄んでまっすぐで、和音に溶け込みやすい響きでした。' });
+  if (S.expr != null && S.expr >= 75) goods.push({ pri: S.expr, title: '表現', text: '強弱とフレーズの抑揚に表情がありました。' + (res.expr.shaped ? `特に${res.expr.shaped.first.label}からのフレーズに山がありました。` : '') });
+  if (S.completion >= 98 && (g.staminaDrop == null || g.staminaDrop < 10)) goods.push({ pri: 80, title: '持続力', text: '最後まで集中を保って歌い切れていました。' });
+  goods.sort((a, b) => b.pri - a.pri);
+  let good = goods.slice(0, 3).map(x => ({ title: x.title, text: x.text }));
+  if (!good.length) {
+    const top = criteria.filter(x => x.score != null).sort((a, b) => b.score - a.score)[0];
+    if (top) good = [{ title: `${top.name}`, text: `${top.name}が全項目の中ではいちばん安定していました。ここを土台に、他の項目を伸ばしていきましょう。` }];
+  }
+
+  // --- 課題 ---
+  const area = (arr, nm) => (arr || []).filter(x => x.tone !== 'good' && x.tone !== 'info').map(x => ({ tone: x.tone, title: x.title, text: x.text, area: nm }));
+  const issues = [].concat(area(fb.pitchPoints, '音程'), area(fb.rhythmPoints, 'リズム・テンポ'), area(fb.voicePoints, '発声・音色'), area(fb.exprPoints, '表現'), area(fb.finishPoints, '完成度'))
+    .sort((a, b) => (b.tone === 'bad') - (a.tone === 'bad')).slice(0, 4);
+
+  // --- 総評 ---
+  const rated = criteria.filter(x => x.score != null);
+  const mxScore = rated.length ? Math.max(...rated.map(x => x.score)) : 0;
+  const best = rated.find(x => x.score >= mxScore - 3);   // 同じくらい高い項目は、並び順（音程→…）で先に出す
+  const worst = rated.slice().sort((a, b) => a.score - b.score)[0];
+  const BEST = { pitch: '音の高さが安定しており', rhythm: '拍の運びが安定しており', voice: '声が澄んでまっすぐで', expr: '強弱とフレーズに表情があり', finish: '最後まで集中して歌い切れており' };
+  const WORST = { pitch: '外れやすい音の確認', rhythm: '入りの揃え方と音の長さの見直し', voice: '息の支えと声の揺れの改善', expr: '強弱とフレーズの山づくり', finish: '後半まで質を保つ持久力' };
+  let ov = '';
+  if (tailStop) ov += `曲の途中（${notes[tailK].label}の手前）までの録音でした。`;
+  ov += S.overall >= 88 ? '全体として完成度の高い、聴きごたえのある演奏でした。' : S.overall >= 76 ? '全体としてよくまとまった演奏でした。' : S.overall >= 62 ? '土台はできており、磨けばさらに良くなる演奏でした。' : S.overall >= 45 ? '部分的に課題の残る演奏でした。' : '音取りとテンポの確認から始めたい演奏でした。';
+  if (best && best.score >= 75) ov += `特に${best.name}は、${BEST[best.key]}、高く評価できます。`;
+  if (worst && worst.score < 85 && (!best || worst.key !== best.key)) ov += `一方で${worst.name}は、${WORST[worst.key]}が今後の課題です。`;
+  const rp = fb.worst && fb.worst.length ? sel(fb.worst[tailStop ? Math.min(1, fb.worst.length - 1) : 0]) : null;
+  if (rp && !tailStop) ov += `${rp.label}付近は、重点的に確認してください。`;
+  if (res.status === 'mismatch') ov = '歌が課題曲と大きく食い違っていたため、正しい採点ができませんでした。曲・パート・テンポの設定を確認して、もう一度お聞かせください。';
+
+  const limit = 'この講評は、録音の音を数値で分析した参考評価です。歌詞の発音、表情、他のパートとの混ざり具合は評価できません。';
+  return { rank, overview: ov, good, issues, criteria, limit };
 }
 
 
@@ -2767,7 +3129,7 @@ function applyPrefsToUI() {
 }
 
 /* ---------------- ステージの状態 ---------------- */
-const PHASE_TEXT = { idle: '待機中', testing: 'マイクテスト中', counting: 'カウント中', recording: '録音中', analyzing: '解析中', playing: '再生中' };
+const PHASE_TEXT = { idle: '待機中', testing: 'マイクテスト中', counting: 'カウント中', recording: '録音中', analyzing: '審査中', playing: '再生中' };
 function setPhase(p, text) {
   S.phase = p;
   const chip = $('#stateChip');
@@ -2778,7 +3140,7 @@ function setPhase(p, text) {
   const recOn = p === 'counting' || p === 'recording';
   const noSong = !curSong();
   rec.classList.toggle('on', recOn);
-  $('#recText').textContent = recOn ? '録音を終了' : '録音して採点';
+  $('#recText').textContent = recOn ? '録音を終了' : 'マイクで録音して審査';
   rec.disabled = (p === 'analyzing' || p === 'playing') || (noSong && !recOn);
   $('#btnGuide').disabled = noSong || (p !== 'idle' && !(p === 'playing' && S.guidePlay));
   $('#guideText').textContent = (p === 'playing' && S.guidePlay) ? 'お手本を止める' : 'お手本を聞く';
@@ -2803,7 +3165,7 @@ function overlay(o) {
 function setHint(kind) {
   const h = $('#stageHint');
   if (kind === 'result') h.textContent = '音符をクリックすると、その音の結果が見られます。ドラッグで表示位置を動かせます。';
-  else h.innerHTML = '<span class="steps"><span><b>1</b> お手本を聞く</span><span><b>2</b> 開始音とカウントのあとに歌う</span><span><b>3</b> 点数と直すところを見る</span></span>';
+  else h.innerHTML = '<span class="steps"><span><b>1</b> 合唱の録音ファイルを選ぶ（この画面へドラッグ＆ドロップもできます）</span><span><b>2</b> 歌い出しとテンポは自動で見つけます</span><span><b>3</b> 審査員の講評を見る</span></span>';
 }
 
 /* ---------------- ループ（メーター・ライブ表示・再生位置） ---------------- */
@@ -3032,15 +3394,15 @@ async function stopRecording() {
 
 async function runAnalysis(samples, sr, song, opts, meta) {
   setPhase('analyzing');
-  overlay({ msg: '歌声を解析しています…', progress: 0 });
+  overlay({ msg: '録音を聴いて審査しています…', progress: 0 });
   await new Promise(r => setTimeout(r, 30));
   let res;
   try {
-    res = await analyzeOffThread(samples, sr, song, opts, (p) => overlay({ msg: '歌声を解析しています…', progress: p }));
+    res = await analyzeOffThread(samples, sr, song, opts, (p) => overlay({ msg: '録音を聴いて審査しています…', progress: p }));
   } catch (e) {
     console.error(e);
     overlay(null); setPhase('idle');
-    toast('解析中にエラーが発生しました。もう一度録音してください。');
+    toast('審査中にエラーが発生しました。もう一度お試しください。');
     return;
   }
   res.meta = meta || {};
@@ -3059,36 +3421,173 @@ async function runAnalysis(samples, sr, song, opts, meta) {
   requestDraw();
 }
 
+/* ---------------- 録音ファイルの審査 ---------------- */
+function envelopeDb(mono, sr, hopSec) {                 // 50msごとの音量(dB)
+  const h = Math.max(1, Math.round(sr * hopSec)), n = Math.floor(mono.length / h), db = new Float32Array(n);
+  for (let i = 0; i < n; i++) { let sum = 0; for (let k = i * h, e = k + h; k < e; k++) sum += mono[k] * mono[k]; db[i] = 10 * Math.log10(sum / h + 1e-12); }
+  return db;
+}
+function pctl(arr, p) { const a = Array.from(arr).sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.max(0, Math.round(p * (a.length - 1))))] : -90; }
+/** 歌っている範囲の候補を見つける。声が出ている連なりのうち、途切れが少ない（＝歌らしい）ものをつなげて、最も長いものを選ぶ。
+ *  おしゃべりは短く途切れるので外れる。 */
+function suggestRange(fa) {
+  const hop = 0.05, db = fa.env, n = db.length, dur = fa.mono.length / fa.sr;
+  if (!n) return { s: 0, e: dur };
+  const thr = Math.max(pctl(db, 0.1) + 9, pctl(db, 0.9) - 24);
+  const gap = Math.round(1.6 / hop);
+  const blocks = []; let st = -1, last = -1;
+  for (let i = 0; i < n; i++) {
+    if (db[i] > thr) { if (st < 0) st = i; last = i; }
+    else if (st >= 0 && i - last > gap) { blocks.push({ s: st, e: last }); st = -1; }
+  }
+  if (st >= 0) blocks.push({ s: st, e: last });
+  if (!blocks.length) return { s: 0, e: dur };
+  blocks.forEach(b => { let act = 0; for (let i = b.s; i <= b.e; i++) if (db[i] > thr) act++; b.act = act; b.drop = 1 - act / (b.e - b.s + 1); });
+  const sing = blocks.filter(b => b.drop <= 0.3);
+  const chains = []; let cur = null;
+  (sing.length ? sing : blocks).forEach(b => {
+    if (cur && (b.s - cur.e) * hop <= 6) { cur.e = b.e; cur.act += b.act; } else { cur = { s: b.s, e: b.e, act: b.act }; chains.push(cur); }
+  });
+  chains.sort((x, y) => y.act - x.act);
+  const c = chains[0];
+  // 他に同じくらい歌らしい連なり（2回目の歌など）がなければ「はっきり1つ」と見なす
+  const clear = chains.length === 1 || chains[1].act < c.act * 0.35;
+  return { s: Math.max(0, c.s * hop - 0.8), e: Math.min(dur, (c.e + 1) * hop + 1.5), clear };
+}
+let rangePrev = null;
+function stopRangePreview() { if (rangePrev) { try { rangePrev.stop(); } catch (e) { /* 既に終了 */ } rangePrev = null; } const b = $('#drPlay'); if (b) b.textContent = 'この範囲を聞く'; }
+/** 波形を見せて、審査する範囲をドラッグで選んでもらう。OKなら {s,e}（秒）、キャンセルなら null */
+function pickRange(fa, init, note) {
+  return new Promise((resolve) => {
+    const dlg = $('#dlgRange'), cv = $('#drCanvas');
+    const dur = fa.mono.length / fa.sr;
+    let sel = { s: Math.max(0, Math.min(dur, init.s)), e: Math.max(0, Math.min(dur, init.e)) };
+    let result = null, drag = null;
+    const hop = 0.05, minLen = 3;
+    const cs = getComputedStyle(document.documentElement);
+    const col = (v, d) => (cs.getPropertyValue(v) || d).trim() || d;
+    const fmt = (t) => { const m = Math.floor(t / 60), x = Math.floor(t % 60); return m + ':' + String(x).padStart(2, '0'); };
+    const lo = pctl(fa.env, 0.05), hi = pctl(fa.env, 0.995);
+    const draw = () => {
+      const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+      if (!W || !H) return;
+      if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+      const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+      const x0 = sel.s / dur * W, x1 = sel.e / dur * W;
+      const base = H - 18, amp = base - 8;
+      const per = fa.env.length / W;
+      for (let x = 0; x < W; x++) {
+        let m = -200; const a = Math.floor(x * per), b = Math.max(a + 1, Math.floor((x + 1) * per));
+        for (let i = a; i < b && i < fa.env.length; i++) if (fa.env[i] > m) m = fa.env[i];
+        const h = Math.max(1, Math.min(1, (m - lo) / Math.max(1, hi - lo)) * amp);
+        g.fillStyle = (x >= x0 && x <= x1) ? col('--brand', '#2f4fd8') : col('--line', '#c8cfdf');
+        g.fillRect(x, base - h, 1, h);
+      }
+      g.fillStyle = col('--muted', '#667'); g.font = '11px system-ui, sans-serif'; g.textBaseline = 'bottom';
+      const steps = [5, 10, 15, 30, 60, 120, 300, 600];
+      const step = steps.find(v => dur / v <= 8) || 600;
+      for (let t = 0; t <= dur; t += step) { const x = t / dur * W; g.fillRect(x, base + 1, 1, 4); g.textAlign = x < 14 ? 'left' : 'center'; g.fillText(fmt(t), Math.max(x, 2), H - 1); }
+      g.fillStyle = col('--brand', '#2f4fd8');
+      [x0, x1].forEach((x, k) => { g.fillRect(x - 1.5, 2, 3, base - 2); g.beginPath(); g.arc(x, base / 2, 9, 0, Math.PI * 2); g.fill(); g.fillStyle = '#fff'; g.fillRect(x - 3, base / 2 - 4, 1.5, 8); g.fillRect(x + 1.5, base / 2 - 4, 1.5, 8); g.fillStyle = col('--brand', '#2f4fd8'); });
+      $('#drInfo').textContent = `選んだ範囲：${fmt(sel.s)} 〜 ${fmt(sel.e)}（${Math.round(sel.e - sel.s)}秒）／ 録音全体 ${fmt(dur)}`;
+    };
+    const xToT = (ev) => { const r = cv.getBoundingClientRect(); return Math.max(0, Math.min(dur, (ev.clientX - r.left) / r.width * dur)); };
+    const onDown = (ev) => {
+      const t = xToT(ev);
+      drag = Math.abs(sel.s - t) < Math.abs(sel.e - t) ? 's' : 'e';
+      onMove(ev); try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* noop */ }
+    };
+    const onMove = (ev) => {
+      if (!drag) return;
+      const t = xToT(ev);
+      if (drag === 's') sel.s = Math.min(t, sel.e - minLen); else sel.e = Math.max(t, sel.s + minLen);
+      sel.s = Math.max(0, sel.s); sel.e = Math.min(dur, sel.e);
+      draw();
+    };
+    const onUp = () => { drag = null; };
+    const onPlay = async () => {
+      if (rangePrev) { stopRangePreview(); return; }
+      const a = await ensureAC();
+      const i0 = Math.floor(sel.s * fa.sr), i1 = Math.min(fa.mono.length, Math.floor(sel.e * fa.sr));
+      const buf = a.createBuffer(1, i1 - i0, fa.sr); buf.getChannelData(0).set(fa.mono.subarray(i0, i1));
+      const src = a.createBufferSource(); src.buffer = buf; src.connect(a.destination); src.onended = () => { if (rangePrev === src) stopRangePreview(); };
+      src.start(); rangePrev = src; $('#drPlay').textContent = '止める';
+    };
+    const onOk = () => { result = { s: sel.s, e: sel.e }; dlg.close(); };
+    const onWhole = () => { result = { s: 0, e: dur }; dlg.close(); };
+    cv.addEventListener('pointerdown', onDown); cv.addEventListener('pointermove', onMove); cv.addEventListener('pointerup', onUp); cv.addEventListener('pointercancel', onUp);
+    $('#drOk').addEventListener('click', onOk); $('#drWhole').addEventListener('click', onWhole); $('#drPlay').addEventListener('click', onPlay);
+    const onRes = () => draw();
+    window.addEventListener('resize', onRes);
+    dlg.addEventListener('close', function done() {
+      dlg.removeEventListener('close', done);
+      stopRangePreview();
+      cv.removeEventListener('pointerdown', onDown); cv.removeEventListener('pointermove', onMove); cv.removeEventListener('pointerup', onUp); cv.removeEventListener('pointercancel', onUp);
+      $('#drOk').removeEventListener('click', onOk); $('#drWhole').removeEventListener('click', onWhole); $('#drPlay').removeEventListener('click', onPlay);
+      window.removeEventListener('resize', onRes);
+      resolve(result);
+    });
+    $('#drMsg').textContent = note || '歌っている部分を自動で見つけました。青い部分が審査する範囲です。左右の丸い持ち手をドラッグして、歌の始まりと終わりに合わせてください。';
+    dlg.showModal();
+    requestAnimationFrame(draw);
+  });
+}
+async function decodeFile(file) {
+  const a = await ensureAC();
+  const buf = await a.decodeAudioData(await file.arrayBuffer());
+  const n = buf.length, ch = buf.numberOfChannels;
+  const mono = new Float32Array(n);
+  for (let c = 0; c < ch; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / ch; }
+  return { name: file.name, mono, sr: buf.sampleRate, dur: buf.duration };
+}
 async function analyzeFile(file) {
   if (S.phase !== 'idle') return;
   if (!curSong()) { toast('先に曲を追加してください。'); return; }
   setPhase('analyzing');
   overlay({ msg: 'ファイルを読み込んでいます…' });
-  let buf;
-  try {
-    const a = await ensureAC();
-    buf = await a.decodeAudioData(await file.arrayBuffer());
-  } catch (e) {
+  let fa;
+  try { fa = await decodeFile(file); } catch (e) {
     console.warn(e);
     overlay(null); setPhase('idle');
     toast('このファイルは読み込めませんでした。WAV・MP3・M4Aなどの音声ファイルを選んでください。');
     return;
   }
-  if (buf.duration > 900) { overlay(null); setPhase('idle'); toast('15分以内の録音ファイルを選んでください。'); return; }
-  const n = buf.length, ch = buf.numberOfChannels;
-  const mono = new Float32Array(n);
-  for (let c = 0; c < ch; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / ch; }
+  if (fa.dur > 1800) { overlay(null); setPhase('idle'); toast('30分以内の録音ファイルを選んでください。'); return; }
+  fa.env = envelopeDb(fa.mono, fa.sr, 0.05);
+  S.fileAudio = fa;
+  overlay(null); setPhase('idle');
+  const songDur = curTl().totalSec;
+  let range = { s: 0, e: fa.dur };
+  if (fa.dur > songDur * 1.5 + 10) {      // 曲よりずっと長い録音（おしゃべりや複数回の歌が入っている）
+    const sug = suggestRange(fa), len = sug.e - sug.s;
+    if (sug.clear && len >= songDur * 0.6 && len <= songDur * 1.6) range = { s: sug.s, e: sug.e };   // 歌の範囲がはっきりしていれば、そのまま審査（あとから選び直せる）
+    else {
+      const pick = await pickRange(fa, sug, `録音が曲（約${Math.round(songDur)}秒）よりかなり長く、歌の範囲を1つに決められませんでした。審査する部分を選んでください。` + '青い部分が審査する範囲です。左右の丸い持ち手をドラッグして、歌の始まりと終わりに合わせます。');
+      if (!pick) return;
+      range = pick;
+    }
+  }
+  await analyzeRange(fa, range);
+}
+async function analyzeRange(fa, range) {
+  if (S.phase !== 'idle') return;
+  const i0 = Math.max(0, Math.floor(range.s * fa.sr)), i1 = Math.min(fa.mono.length, Math.ceil(range.e * fa.sr));
+  const samples = (i0 === 0 && i1 === fa.mono.length) ? fa.mono : new Float32Array(fa.mono.subarray(i0, i1));
   S.result = null; S.live = [];
   $('#result').hidden = true;
   const song = curSong();
-  await runAnalysis(mono, buf.sampleRate, song, { bpm: S.bpm, transpose: S.transpose + 12 * S.octave, mode: S.mode, clickMode: false }, { fromFile: file.name });
+  await runAnalysis(samples, fa.sr, song, { bpm: S.bpm, transpose: S.transpose + 12 * S.octave, mode: S.mode, clickMode: false },
+    { fromFile: fa.name, range: { s: range.s, e: range.e }, fullDur: fa.dur });
+}
+async function reRange() {
+  const fa = S.fileAudio;
+  if (!fa || S.phase !== 'idle') return;
+  const cur = S.result && S.result.meta && S.result.meta.range ? S.result.meta.range : suggestRange(fa);
+  const pick = await pickRange(fa, cur, '審査する範囲を選び直せます。青い部分が審査する範囲です。左右の丸い持ち手をドラッグして、歌の始まりと終わりに合わせます。');
+  if (pick) await analyzeRange(fa, pick);
 }
 
 /* ---------------- 結果の表示 ---------------- */
-function verdictOf(sc, completion) {
-  if (completion != null && completion < 80) return '最後まで歌い切ってみましょう';
-  return sc >= 90 ? 'すばらしい出来です' : sc >= 80 ? 'よくできました' : sc >= 70 ? 'あと一歩です' : sc >= 55 ? '練習すれば伸びます' : 'まずは音取りから始めましょう';
-}
 function countUp(el, to, ms) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = Math.round(to); return; }
   const t0 = performance.now();
@@ -3099,6 +3598,7 @@ function countUp(el, to, ms) {
   };
   requestAnimationFrame(step);
 }
+function fmtMS(t) { const m = Math.floor(t / 60), x = Math.floor(t % 60); return m + ':' + String(x).padStart(2, '0'); }
 function showResult(res) {
   const box = $('#result');
   box.hidden = false;
@@ -3106,45 +3606,62 @@ function showResult(res) {
   setHint('result');
   const ok = res.scores != null;
   const sc = res.scores;
-  $('#scSong').textContent = `${res.songTitle}　♩=${res.bpm}${res.meta && res.meta.fromFile ? '　ファイル：' + res.meta.fromFile : ''}`;
+  const fromFile = res.meta && res.meta.fromFile;
+  $('#scSong').textContent = `${res.songTitle}　♩=${res.bpm}${fromFile ? '　ファイル：' + res.meta.fromFile : ''}`;
+  $('#btnReRange').hidden = !(fromFile && S.fileAudio && S.fileAudio.name === res.meta.fromFile);
   const flags = $('#flags'); flags.innerHTML = '';
   const addFlag = (cls, text) => { const d = document.createElement('div'); d.className = 'flag ' + cls; d.textContent = text; flags.appendChild(d); };
   res.flags.forEach(f => addFlag(f.level === 'error' ? 'error' : '', f.text));
   if (res.meta && res.meta.guideRec) addFlag('', 'ガイド音を流しながら録音しました。スピーカーから流した場合、ガイド音が録音に混ざり、点数が高く出すぎることがあります。');
   if (!ok) {
-    $('#scOverall').textContent = '--'; $('#scVerdict').textContent = '採点できませんでした';
-    $('#subs').innerHTML = ''; $('#fb').innerHTML = ''; $('#worst').hidden = true; $('#tips').hidden = true; $('#noteDetail').hidden = true;
+    $('#scOverall').textContent = '--'; $('#scVerdict').textContent = '審査できませんでした'; $('#scRank').hidden = true;
+    $('#subs').innerHTML = ''; $('#fb').innerHTML = ''; $('#fbHead').hidden = true; $('#judge').hidden = true; $('#worst').hidden = true; $('#tips').hidden = true; $('#noteDetail').hidden = true;
     $('#noteTbl').innerHTML = ''; $('#tblBox').hidden = true;
     box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
   const g = res.global;
+  // 録音のどこを曲に対応づけたか／実際のテンポ（ファイル審査）
+  if (fromFile && g.line && res.timeline) {
+    const sung = res.timeline.notes.filter(n => !n.rest);
+    if (sung.length && res.status !== 'mismatch') {
+      const off = res.meta.range ? res.meta.range.s : 0;
+      const t0 = sung[0].startSec, t1 = sung[sung.length - 1].endSec;
+      const a0 = off + g.line.a + g.line.b * t0, a1 = off + g.line.a + g.line.b * t1;
+      addFlag('info', `録音の ${fmtMS(Math.max(0, a0))} 〜 ${fmtMS(Math.max(0, a1))} を曲に対応づけて審査しました。実際のテンポは約♩=${Math.round(g.bpmEquivalent)}です（設定は♩=${res.bpm}）。` + (res.meta.range && res.meta.fullDur > res.meta.range.e - res.meta.range.s + 5 ? `（審査範囲：${fmtMS(res.meta.range.s)} 〜 ${fmtMS(res.meta.range.e)}）` : ''));
+    }
+  }
   if (res.mode === 'absolute' && Math.abs(g.keyShift) >= 1 && sc.pitchRel - sc.pitch >= 15) addFlag('info', `全体が原調より約${Math.abs(g.keyShift)}半音${g.keyShift > 0 ? '高い' : '低い'}キーで歌われていました。「音の幅だけで採点」にすると音程は${Math.round(sc.pitchRel)}点です。`);
   if (res.clickMode && Math.abs(g.latency) > 0.18) addFlag('info', `入りが全体に約${Math.round(Math.abs(g.latency) * 1000)}ms${g.latency > 0 ? '遅れて' : '早まって'}います。マイクや再生の遅れが含まれている可能性もあります。`);
   if (res.mode === 'relative' && Math.abs(g.keyShift) >= 1) addFlag('info', `全体が原調より約${Math.abs(g.keyShift)}半音${g.keyShift > 0 ? '高い' : '低い'}キーで歌われていました（「音の幅だけで採点」のため減点していません）。`);
+  const fb = res.feedback, jd = fb.judge;
   $('#scOverall').innerHTML = '<span id="scNum">0</span><small>点</small>';
   countUp($('#scNum'), sc.overall, 700);
-  $('#scVerdict').textContent = res.status === 'mismatch' ? '曲と合っていない可能性があります' : verdictOf(sc.overall, sc.completion);
-  const rows = [
-    ['音程', '音の高さの正確さ', sc.pitch], ['リズム', '入りのタイミング・音の長さ', sc.rhythm], ['声の安定', '揺れの少なさ・澄み（目安）', sc.voice], ['歌えた割合', '最後まで歌えたか', sc.completion]
-  ];
+  const rk = $('#scRank');
+  rk.hidden = false; rk.textContent = jd.rank.name; rk.dataset.k = jd.rank.key;
+  $('#scVerdict').textContent = jd.rank.headline;
+  // 審査表（5項目）
   const subs = $('#subs'); subs.innerHTML = '';
-  rows.forEach(([nm, sm, v]) => {
+  jd.criteria.forEach((c) => {
     const r = document.createElement('div'); r.className = 'sub';
-    r.innerHTML = `<div class="nm">${nm}<small>${sm}</small></div><div class="bar"><i data-q="${qual(v)}"></i></div><div class="val">${Math.round(v)}</div>`;
+    const v = c.score;
+    r.innerHTML = `<div class="nm">${esc(c.name)}<small>${esc(c.sub)}</small></div><div class="bar"><i data-q="${v == null ? 'warn' : qual(v)}"></i></div><div class="val">${v == null ? '<span class="na">―</span>' : Math.round(v)}</div><div class="cmt">${esc(c.comment)}</div>`;
     subs.appendChild(r);
-    requestAnimationFrame(() => requestAnimationFrame(() => { $('i', r).style.width = Math.max(2, v) + '%'; }));
+    if (v != null) requestAnimationFrame(() => requestAnimationFrame(() => { $('i', r).style.width = Math.max(2, v) + '%'; }));
   });
-  // 講評
-  const fb = res.feedback;
+  // 審査員の講評
+  const jb = $('#judge'); jb.hidden = false;
+  jb.innerHTML = `<h3>審査員の講評</h3><p class="ov">${esc(jd.overview)}</p><div class="jcols"><div class="jgood"><h4>良かった点</h4><ul>${jd.good.map(x => `<li><b>${esc(x.title)}</b>${esc(x.text)}</li>`).join('') || '<li>―</li>'}</ul></div><div class="jissue"><h4>課題</h4><ul>${jd.issues.length ? jd.issues.map(x => `<li class="${x.tone === 'bad' ? 'bad' : ''}"><b>${esc(x.title)}<small>${esc(x.area)}</small></b>${esc(x.text)}</li>`).join('') : '<li><b>大きな課題は見当たりませんでした</b>この調子で、表情づくりを深めていきましょう。</li>'}</ul></div></div><p class="jlimit">${esc(jd.limit)}${res.status === 'ok' ? '' : ''}</p>`;
   const fbBox = $('#fb'); fbBox.innerHTML = '';
   const addGroup = (title, score, list) => {
     if (!list || !list.length) return;
     const d = document.createElement('div');
-    d.innerHTML = `<h3>${title}<span>${Math.round(score)}点</span></h3><ul>${list.map(it => `<li class="${it.tone === 'bad' ? 'bad' : it.tone === 'good' ? 'good' : 'warn'}"><b>${esc(it.title)}</b>${esc(it.text)}</li>`).join('')}</ul>`;
+    d.innerHTML = `<h3>${title}<span>${score == null ? '' : Math.round(score) + '点'}</span></h3><ul>${list.map(it => `<li class="${it.tone === 'bad' ? 'bad' : it.tone === 'good' ? 'good' : it.tone === 'info' ? 'info' : 'warn'}"><b>${esc(it.title)}</b>${esc(it.text)}</li>`).join('')}</ul>`;
     fbBox.appendChild(d);
   };
-  addGroup('音程', sc.pitch, fb.pitchPoints); addGroup('リズム', sc.rhythm, fb.rhythmPoints); addGroup('声の安定', sc.voice, fb.voicePoints);
+  addGroup('音程', sc.pitch, fb.pitchPoints); addGroup('リズム・テンポ', sc.rhythm, fb.rhythmPoints); addGroup('発声・音色', sc.voice, fb.voicePoints);
+  addGroup('表現', sc.expr, fb.exprPoints); addGroup('完成度', sc.finish, fb.finishPoints);
+  $('#fbHead').hidden = !fbBox.children.length;
   const wb = $('#worst');
   if (fb.worst.length) {
     wb.hidden = false;
@@ -3234,15 +3751,20 @@ function renderDetail() {
 
 /* ---------------- 結果の書き出し ---------------- */
 function summaryText(res) {
-  const sc = res.scores, d = new Date();
+  const sc = res.scores, d = new Date(), jd = res.feedback.judge;
   const p2 = (n) => String(n).padStart(2, '0');
-  const lines = [`ChoralEval 結果　${d.getFullYear()}/${p2(d.getMonth() + 1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`,
+  const sv = (v) => v == null ? '―' : Math.round(v);
+  const lines = [`ChoralEval 審査員の講評　${d.getFullYear()}/${p2(d.getMonth() + 1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`,
     `曲：${res.songTitle}（♩=${res.bpm}）`,
-    `総合 ${Math.round(sc.overall)}点（音程 ${Math.round(sc.pitch)} / リズム ${Math.round(sc.rhythm)} / 声の安定 ${Math.round(sc.voice)} / 歌えた割合 ${Math.round(sc.completion)}%）`];
+    `総合 ${Math.round(sc.overall)}点（${jd.rank.name}）`,
+    `音程 ${sv(sc.pitch)} / リズム・テンポ ${sv(sc.rhythm)} / 発声・音色 ${sv(sc.voice)} / 表現 ${sv(sc.expr)} / 完成度 ${sv(sc.finish)}`,
+    '', '【総評】', jd.overview];
+  if (jd.good.length) { lines.push('', '【良かった点】'); jd.good.forEach(x => lines.push('・' + x.title + '：' + x.text)); }
+  if (jd.issues.length) { lines.push('', '【課題】'); jd.issues.forEach(x => lines.push('・' + x.title + '（' + x.area + '）')); }
   const fb = res.feedback;
-  const pts = [...(fb.pitchPoints || []), ...(fb.rhythmPoints || []), ...(fb.voicePoints || [])].filter(p => p.tone !== 'good').slice(0, 5);
-  if (pts.length) { lines.push('', '直すところ'); pts.forEach(p => lines.push('・' + p.title)); }
-  if (fb.worst.length) { lines.push('', 'まず直したい場所：' + fb.worst.map(i => res.notes[i].label).join('、')); }
+  if (fb.worst.length) lines.push('', 'まず直したい場所：' + fb.worst.map(i => res.notes[i].label).join('、'));
+  if (fb.tips && fb.tips.length) { lines.push('', '【次の練習】'); fb.tips.slice(0, 3).forEach(t => lines.push('・' + t)); }
+  lines.push('', '※録音の音を数値で分析した参考評価です。');
   return lines.join('\n');
 }
 function download(name, blob) {
@@ -3287,14 +3809,14 @@ function bindResultActions() {
 function saveHistory(res) {
   if (!res.scores) return;
   const h = store.get('history', []);
-  h.push({ ts: Date.now(), songId: res.songId, title: res.songTitle, bpm: res.bpm, mode: res.mode, s: { o: Math.round(res.scores.overall), p: Math.round(res.scores.pitch), r: Math.round(res.scores.rhythm), v: Math.round(res.scores.voice), c: Math.round(res.scores.completion) }, ok: res.status === 'ok' });
+  h.push({ ts: Date.now(), songId: res.songId, title: res.songTitle, bpm: res.bpm, mode: res.mode, s: { o: Math.round(res.scores.overall), p: Math.round(res.scores.pitch), r: Math.round(res.scores.rhythm), v: Math.round(res.scores.voice), e: res.scores.expr == null ? null : Math.round(res.scores.expr), c: Math.round(res.scores.completion) }, rank: res.feedback && res.feedback.judge ? res.feedback.judge.rank.name : '', ok: res.status === 'ok' });
   while (h.length > 200) h.shift();
   store.set('history', h);
 }
 function renderHistory() {
   const body = $('#histBody');
   const h = store.get('history', []).slice().reverse();
-  if (!h.length) { body.innerHTML = '<p class="empty">まだ記録がありません。録音して採点すると、ここに点数が残ります（この端末のブラウザ内だけに保存されます。別のPCへは、ヘッダーの「データ」からJSONで持ち出せます）。</p>'; return; }
+  if (!h.length) { body.innerHTML = '<p class="empty">まだ記録がありません。録音を審査すると、ここに点数が残ります（この端末のブラウザ内だけに保存されます。別のPCへは、ヘッダーの「データ」からJSONで持ち出せます）。</p>'; return; }
   const valid = h.filter(x => x.ok);
   const best = valid.length ? Math.max(...valid.map(x => x.s.o)) : 0;
   let html = `<div class="pv">記録 ${h.length}件　最高 ${best}点</div>`;
@@ -3308,7 +3830,7 @@ function renderHistory() {
   html += spark;
   h.slice(0, 60).forEach(x => {
     const d = new Date(x.ts), p2 = (n) => String(n).padStart(2, '0');
-    html += `<div class="hist-row"><div><b>${esc(x.title)}</b><br><small>${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}　♩=${x.bpm}　音程${x.s.p}・リズム${x.s.r}・声${x.s.v}${x.ok ? '' : '　（曲と不一致の可能性）'}</small></div><div class="sc">${x.s.o}</div></div>`;
+    html += `<div class="hist-row"><div><b>${esc(x.title)}</b><br><small>${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}　♩=${x.bpm}　音程${x.s.p}・リズム${x.s.r}・声${x.s.v}${x.s.e != null ? '・表現' + x.s.e : ''}${x.rank && x.ok ? '　' + x.rank : ''}${x.ok ? '' : '　（曲と不一致の可能性）'}</small></div><div class="sc">${x.s.o}</div></div>`;
   });
   body.innerHTML = html;
 }
@@ -3960,6 +4482,7 @@ function init() {
   bindTheme();
   bindResultActions();
   setupPwa();
+  setHint('idle');
   setPhase('idle');
   $('#btnRec').addEventListener('click', () => {
     if (S.phase === 'counting' || S.phase === 'recording') stopRecording();
@@ -3969,9 +4492,28 @@ function init() {
   $('#btnPlayRec').addEventListener('click', () => { if (S.recPlay) stopRecPlay(); else playRecording(); });
   $('#btnMicTest').addEventListener('click', toggleMicTest);
   $('#btnFile').addEventListener('click', () => $('#fileIn').click());
+  $('#btnReRange').addEventListener('click', reRange);
+  // 録音ファイルをこの画面へドラッグ＆ドロップ
+  {
+    let depth = 0;
+    const hasFile = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+    const veil = $('#dropVeil');
+    const hide = () => { depth = 0; veil.hidden = true; };
+    window.addEventListener('dragenter', (e) => { if (!hasFile(e) || document.querySelector('dialog[open]')) return; e.preventDefault(); depth++; if (S.phase === 'idle') veil.hidden = false; });
+    window.addEventListener('dragover', (e) => { if (!hasFile(e) || document.querySelector('dialog[open]')) return; e.preventDefault(); });
+    window.addEventListener('dragleave', (e) => { if (!hasFile(e)) return; depth = Math.max(0, depth - 1); if (!depth) veil.hidden = true; });
+    window.addEventListener('drop', (e) => {
+      if (!hasFile(e) || document.querySelector('dialog[open]')) return;
+      e.preventDefault(); hide();
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!f) return;
+      if (S.phase !== 'idle') { toast('いまの処理が終わってから、もう一度ドロップしてください。'); return; }
+      analyzeFile(f);
+    });
+  }
   $('#fileIn').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) analyzeFile(f); });
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    $('#stageHint').innerHTML = '<span style="color:var(--t-warn)">このページではマイクを使えません。https:// で始まるアドレス、または localhost で開いてください（録音ファイルの解析は使えます）。</span>';
+    $('#stageHint').innerHTML = '<span style="color:var(--t-warn)">このページではマイクを使えません（録音ファイルの審査は、そのままお使いいただけます）。マイクで録音するには、https:// で始まるアドレス、または localhost で開いてください。</span>';
   }
   window.ChoralApp = { state: S, engine: E, parseMusicXML };
   requestDraw();
