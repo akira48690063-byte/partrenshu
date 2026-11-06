@@ -1,0 +1,10 @@
+{
+  "app": "ChoralEval",
+  "files": [
+    { "file": "with-you-smile-choir.json", "title": "With You Smile（合唱3声）", "desc": "ソプラノ・アルト・男声の3声。通し／1番／2番／サビの4曲。合唱として評価します" },
+    { "file": "with-you-smile-soprano.json", "title": "With You Smile（ソプラノ）", "desc": "ソプラノのパート練習用。通し・1番・2番・サビなど" },
+    { "file": "with-you-smile-alto.json", "title": "With You Smile（アルト）", "desc": "アルトのパート練習用。通し・1番・2番・サビなど" },
+    { "file": "with-you-smile-men.json", "title": "With You Smile（男声）", "desc": "男声のパート練習用。通し・1番・2番・サビなど" },
+    { "file": "with-you-smile-all.json", "title": "With You Smile（すべて）", "desc": "合唱3声4曲と、各パート12曲をまとめて登録します" }
+  ]
+}

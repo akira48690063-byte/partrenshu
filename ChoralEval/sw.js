@@ -1,5 +1,5 @@
 // ChoralEval オフライン用 Service Worker（キャッシュ優先＋裏で更新）
-const CACHE = 'choraleval-e9556cd88c';
+const CACHE = 'choraleval-595154ab3a';
 const ASSETS = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
@@ -7,7 +7,7 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  if (req.method !== 'GET' || !req.url.startsWith(self.registration.scope)) return;
   e.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => {
     const net = fetch(req).then((res) => { if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; }).catch(() => null);
     if (hit) return hit;

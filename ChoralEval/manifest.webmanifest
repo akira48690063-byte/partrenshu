@@ -1,7 +1,7 @@
 {
-  "name": "ChoralEval 合唱ピッチ・リズムコーチ",
+  "name": "ChoralEval 合唱AI審査員",
   "short_name": "ChoralEval",
-  "description": "歌声を録音して、音程・リズム・声の安定を端末内で解析する合唱練習アプリ",
+  "description": "合唱の録音ファイルを、音程・リズム・和音の響き・表現などの審査項目で、端末内だけで講評する合唱練習アプリ",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",
